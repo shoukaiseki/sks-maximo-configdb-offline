@@ -1,6 +1,6 @@
 sks:
   maximo-properties:
-    default: hd
+    default: local
     global:
       mxe.name: MXServer
       mxe.db.driver: com.ibm.db2.jcc.DB2Driver
