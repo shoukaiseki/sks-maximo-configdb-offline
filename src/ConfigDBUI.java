@@ -178,6 +178,8 @@ public class ConfigDBUI {
         String sql = "select varname, varvalue from maxvars where varname in ('CONFIGURING','CONFIRMLABTRANS','ADMINRESTART') order by varname";
         String countSql = "select count(1) as CNT from SERVERSESSION";
         appendLog(">> 查询变量值", COLOR_START, 1);
+        appendLog(">> SQL: " + sql, COLOR_INFO, 1);
+        appendLog(">> SQL: " + countSql, COLOR_INFO, 1);
         infoLabel.setText("正在查询...");
 
         new Thread(() -> {
