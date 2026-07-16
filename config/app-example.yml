@@ -1,0 +1,17 @@
+sks:
+  maximo-properties:
+    default: hd
+    global:
+      mxe.name: MXServer
+      mxe.db.driver: com.ibm.db2.jcc.DB2Driver
+      mxe.db.schemaowner: maximo
+    environments:
+      local:
+        sks.desc: 本机
+        mxe.db.url: jdbc:db2://localhost:50000/MAXIMO
+        mxe.db.user: db2inst1
+        mxe.db.password: Maximo123
+        #mxe.security.crypto.key: "tXwBJJjEfGwsMpmLJTKfwPki"
+        #mxe.security.old.crypto.key: "tXwBJJjEfGwsMpmLJTKfwPki"
+        #mxe.security.cryptox.key: "WJlJEUDzAreXkkaGCTluiufM"
+        #mxe.security.old.cryptox.key: "WJlJEUDzAreXkkaGCTluiufM"

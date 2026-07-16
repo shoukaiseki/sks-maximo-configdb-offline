@@ -1,0 +1,27 @@
+# 环境配置（包含数据库连接信息等敏感配置）
+config/app.yml
+
+# JDK 路径配置（本地路径）
+config.properties
+
+# 数据库连接配置（自动生成，包含数据库密码）
+maximo/properties/maximo.properties
+
+# Maximo 业务对象 JAR（非公开，需从 Maximo 安装目录复制）
+maximo/businessobjects.jar
+
+# Maximo 数据库驱动及相关依赖（非公开，需从 Maximo 安装目录复制）
+maximo/lib/db2jcc.jar
+maximo/lib/db2jcc_license_cu.jar
+maximo/lib/icu4j.jar
+
+# 编译产物
+# bin/
+
+# 日志
+logs/
+
+# 系统文件
+*.log
+.DS_Store
+Thumbs.db
