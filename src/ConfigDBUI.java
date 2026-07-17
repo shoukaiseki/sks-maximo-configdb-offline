@@ -818,6 +818,7 @@ public class ConfigDBUI {
     // ============================================================
     private void buildUI() {
         frame = new JFrame("sks_configdb - Maximo 数据库配置工具");
+        frame.setIconImage(new ImageIcon("images/icon.png").getImage());
         frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         frame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
