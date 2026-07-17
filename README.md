@@ -74,14 +74,51 @@ copy config\app-example.yml config\app.yml # Windows
 
 ## 快速开始
 
+### 1. 编译 Java 源码
+
 ```bash
-# 1. 编译
 build.bat          # Windows
 # 或
 build.sh           # Linux/Mac
+```
 
-# 2. 运行
+### 2. 启动
+
+**方式一：直接双击 exe（推荐）**
+
+`sks_configdb.exe` 是 Windows 原生可执行文件，使用 C# 编写（源码 [launcher.cs](launcher.cs)），读取 `config.properties` 中的 JDK 路径后自动启动 Java UI。可直接双击运行，无需打开命令行。
+
+**方式二：批处理启动**
+
+```bash
 run.bat            # Windows
 # 或
 run.sh             # Linux/Mac
 ```
+
+## 使用 Launch4j 打包 EXE
+
+[Launch4j](https://launch4j.sourceforge.net/) 是一款将 JAR 包装为 Windows EXE 的工具，生成的 exe 文件更小、启动更快。
+
+### 安装 Launch4j
+
+从 [SourceForge](https://sourceforge.net/projects/launch4j/files/launch4j-3/3.50/) 下载 `launch4j-3.50-win32.exe` 并安装。
+
+### 打包步骤
+
+```bash
+# 1. 先编译 Java 类
+build.bat
+
+# 2. 创建 JAR 包
+jar cfm build\sks_configdb.jar launch4j-manifest.mf -C bin .
+
+# 3. 用 Launch4j 生成 EXE
+#    方式 A：双击 launch4j.exe → 打开 launch4j-config.xml → 点击齿轮图标（Build）
+#    方式 B：命令行
+java -jar "C:\Program Files (x86)\Launch4j\launch4j.jar" launch4j-config.xml
+```
+
+执行成功后，`sks_configdb.exe` 会更新为 Launch4j 打包的版本，双击即可启动。
+
+> [launch4j-config.xml](launch4j-config.xml) 已预配置了 classpath 和 JRE 选项（要求 JDK 17+），可直接使用。

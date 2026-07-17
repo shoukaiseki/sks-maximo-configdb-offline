@@ -15,8 +15,8 @@ maximo/lib/db2jcc.jar
 maximo/lib/db2jcc_license_cu.jar
 maximo/lib/icu4j.jar
 
-# 编译产物
-# bin/
+# 编译产出（package.bat 生成的中间文件）
+build/
 
 # 日志
 logs/
