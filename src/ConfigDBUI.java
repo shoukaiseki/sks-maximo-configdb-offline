@@ -65,6 +65,7 @@ public class ConfigDBUI {
     private JButton btnSetConfirmLabTrans;
     private JButton btnSetAdminRestart;
     private JButton btnQueryVars;
+    private JButton btnShowJars;
     private JLabel lineCountLabel;
     private JLabel taskStatusLabel;
 
@@ -79,6 +80,7 @@ public class ConfigDBUI {
     private String javaCmd;
     private String classPath;
     private String propDir;
+    private java.util.List<String> loadedJars = new java.util.ArrayList<>();
 
     // 环境切换
     private String currentEnvName;
@@ -547,6 +549,26 @@ public class ConfigDBUI {
     }
 
     // ============================================================
+    // 显示已加载的 JAR 列表
+    // ============================================================
+    private void showLoadedJars() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("已加载 ").append(loadedJars.size()).append(" 个 JAR:\n\n");
+        for (int i = 0; i < loadedJars.size(); i++) {
+            sb.append(String.format("  %2d. %s%n", i + 1, loadedJars.get(i)));
+        }
+
+        JTextArea textArea = new JTextArea(sb.toString());
+        textArea.setEditable(false);
+        textArea.setFont(new Font("Consolas", Font.PLAIN, 12));
+        textArea.setBackground(new Color(245, 245, 245));
+        JScrollPane scroll = new JScrollPane(textArea);
+        scroll.setPreferredSize(new Dimension(600, 300));
+
+        JOptionPane.showMessageDialog(frame, scroll, "已加载 JAR", JOptionPane.PLAIN_MESSAGE);
+    }
+
+    // ============================================================
     // 无界面模式：直接执行 SQL
     // ============================================================
     private static void headlessRunSql(String sql, String sksRootStr) {
@@ -774,6 +796,7 @@ public class ConfigDBUI {
 
     private String buildClassPath() {
         StringBuilder cp = new StringBuilder();
+        loadedJars.clear();
 
         File libDir = new File(sksRoot, "maximo/lib");
         File propDirFile = new File(sksRoot, "maximo/properties");
@@ -787,12 +810,16 @@ public class ConfigDBUI {
         appendIfExists(cp, resDir);
         if (boJar.exists()) {
             cp.append(boJar.getAbsolutePath()).append(File.pathSeparator);
+            loadedJars.add(boJar.getAbsolutePath());
         } else {
             appendIfExists(cp, boDir);
         }
 
         File snakeyamlJar = new File(sksRoot, "lib/snakeyaml-2.5.jar");
-        if (snakeyamlJar.exists()) cp.append(snakeyamlJar.getAbsolutePath()).append(File.pathSeparator);
+        if (snakeyamlJar.exists()) {
+            cp.append(snakeyamlJar.getAbsolutePath()).append(File.pathSeparator);
+            loadedJars.add(snakeyamlJar.getAbsolutePath());
+        }
 
         File binDir = new File(sksRoot, "bin");
         appendIfExists(cp, binDir);
@@ -801,7 +828,10 @@ public class ConfigDBUI {
             File[] jars = libDir.listFiles((d, n) -> n.endsWith(".jar"));
             if (jars != null) {
                 Arrays.sort(jars);
-                for (File j : jars) cp.append(j.getAbsolutePath()).append(File.pathSeparator);
+                for (File j : jars) {
+                    cp.append(j.getAbsolutePath()).append(File.pathSeparator);
+                    loadedJars.add(j.getAbsolutePath());
+                }
             }
         }
 
@@ -868,6 +898,7 @@ public class ConfigDBUI {
         btnRestore = createButton("RestoreFromBackup", new Color(52, 168, 83), e -> runJavaClass("restorefrombackup"));
         btnStop = createButton("停止", new Color(234, 67, 53), e -> stopProcess(), false);
         btnClear = createButton("清空日志", new Color(95, 99, 104), e -> clearLog());
+        btnShowJars = createButton("已加载 JAR", new Color(130, 130, 130), e -> showLoadedJars());
         btnSwitchEnv = createButton("环境: ...", new Color(40, 130, 180), e -> showEnvDialog());
 
         JPanel row1 = new JPanel(new BorderLayout());
@@ -882,6 +913,8 @@ public class ConfigDBUI {
         row1.add(leftRow1, BorderLayout.WEST);
         JPanel rightRow1 = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         rightRow1.setBackground(Color.WHITE);
+        rightRow1.add(btnShowJars);
+        rightRow1.add(Box.createHorizontalStrut(8));
         rightRow1.add(btnSwitchEnv);
         row1.add(rightRow1, BorderLayout.EAST);
 

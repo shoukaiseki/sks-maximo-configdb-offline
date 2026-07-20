@@ -20,7 +20,11 @@ if not "%JDK_HOME%"=="" (
   if exist "%JDK_HOME%\bin\jar.exe" set JAR_CMD=%JDK_HOME%\bin\jar.exe
 )
 
-set "LAUNCH4J=C:\Program Files (x86)\Launch4j\launch4j.jar"
+set "LAUNCH4J_DIR=launch4j"
+
+REM C# compiler
+set "CSC_CMD=%SystemRoot%\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+if not exist "!CSC_CMD!" set "CSC_CMD="
 
 echo.
 echo === 1. Compile Java source ===
@@ -43,19 +47,63 @@ if !errorlevel! neq 0 (
 )
 
 echo.
-echo === 3. Generate EXE (Launch4j) ===
-if exist "%LAUNCH4J%" (
-  "%JAVA_CMD%" -jar "%LAUNCH4J%" launch4j-config.xml
+echo === 3. Generate EXE ===
+
+REM Try Launch4j first, fallback to C# compiler
+
+REM Read JDK path from config.properties and inject into launch4j config
+set JDK_PATH=
+if exist config.properties (
+  for /f "tokens=1,2 delims==" %%a in (config.properties) do (
+    if %%a==jdk.home set JDK_PATH=%%b
+  )
+)
+if not "!JDK_PATH!"=="" (
+  powershell -NoProfile -Command ^
+    "(Get-Content 'launch4j-config.xml' -Raw) -replace '@JDK_HOME@', '!JDK_PATH!' | Set-Content 'launch4j-config.xml'"
+) else (
+  powershell -NoProfile -Command ^
+    "(Get-Content 'launch4j-config.xml' -Raw) -replace '<path>@JDK_HOME@</path>', '' | Set-Content 'launch4j-config.xml'"
+)
+
+if exist "%LAUNCH4J_DIR%\launch4jc.exe" (
+  "%LAUNCH4J_DIR%\launch4jc.exe" launch4j-config.xml
   if !errorlevel! equ 0 (
-    echo EXE generated: sks_configdb.exe
+    echo EXE generated via Launch4j: sks_configdb.exe
+    goto :exe_done
   ) else (
-    echo Launch4j FAILED!
+    echo Launch4j CLI FAILED, trying JAR version...
+  )
+)
+if exist "%LAUNCH4J_DIR%\launch4j.jar" (
+  "%JAVA_CMD%" -jar "%LAUNCH4J_DIR%\launch4j.jar" launch4j-config.xml
+  if !errorlevel! equ 0 (
+    echo EXE generated via Launch4j JAR: sks_configdb.exe
+    goto :exe_done
+  ) else (
+    echo Launch4j JAR FAILED, trying C# compiler...
+  )
+)
+
+if defined CSC_CMD (
+  echo Compiling launcher.cs with C# compiler...
+  "!CSC_CMD!" /target:winexe /win32icon:images\icon.ico /out:sks_configdb.exe launcher.cs
+  if !errorlevel! equ 0 (
+    echo EXE generated via C# compiler: sks_configdb.exe
+    goto :exe_done
+  ) else (
+    echo C# compiler FAILED!
   )
 ) else (
-  echo [SKIP] Launch4j not installed at "%LAUNCH4J%"
+  echo [SKIP] No Launch4j or C# compiler available
   echo        JAR created: build\sks_configdb.jar
-  echo        To generate EXE, install Launch4j or use: csc /target:winexe /win32icon:images\icon.ico /out:sks_configdb.exe launcher.cs
 )
+
+:exe_done
+
+REM Restore launch4j config placeholder (undo JDK path injection)
+powershell -NoProfile -Command ^
+  "(Get-Content 'launch4j-config.xml' -Raw) -replace '<path>[^<]+</path>', '<path>@JDK_HOME@</path>' | Set-Content 'launch4j-config.xml'"
 
 echo.
 echo ===== PACKAGE COMPLETE =====
@@ -66,14 +114,16 @@ if exist "sks_configdb.exe" (
 )
 echo.
 
-REM === 4. Distribution ZIP (package.bat dist) ===
-if /i "%1"=="dist" (
-  echo === 4. Create distribution ZIP ===
-  set "ZIP_FILE=build\sks_configdb.zip"
-  if exist "!ZIP_FILE!" del "!ZIP_FILE!"
+goto :check_dist
 
-  REM git archive only includes tracked files (ignores .gitignore entries)
-  powershell -NoProfile -Command ^
+REM === 4. Distribution ZIP ====================================
+:do_zip
+echo === 4. Create distribution ZIP ===
+set "ZIP_FILE=build\sks_configdb.zip"
+if exist "!ZIP_FILE!" del "!ZIP_FILE!"
+
+REM git archive only includes tracked files (ignores .gitignore entries)
+powershell -NoProfile -Command ^
     "$src='%~dp0'; ^
      $src=$src.TrimEnd('\'); ^
      $zip=Join-Path $src 'build\sks_configdb.zip'; ^
@@ -84,12 +134,15 @@ if /i "%1"=="dist" (
      Write-Host '  ZIP created:' $zip; ^
      $len=(Get-Item $zip).Length; ^
      Write-Host ('  Size: {0:N0} KB' -f ($len / 1KB))"
-  if !errorlevel! equ 0 (
+if !errorlevel! equ 0 (
     echo ===== DIST COMPLETE =====
-  ) else (
+) else (
     echo Create ZIP FAILED!
-  )
 )
+goto :end
 
-pause
+:check_dist
+if /i "%1"=="dist" goto :do_zip
+
+:end
 exit /b 0

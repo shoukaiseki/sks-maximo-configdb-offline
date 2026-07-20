@@ -22,7 +22,15 @@ class Launcher {
         }
 
         string jarDir = Path.Combine(dir, "bin");
-        string classpath = "\"bin;maximo\\businessobjects.jar;lib\\snakeyaml-2.5.jar;maximo\\lib\\db2jcc.jar;maximo\\lib\\db2jcc_license_cu.jar;maximo\\lib\\icu4j.jar;maximo\\lib\\j2ee.jar;maximo\\lib\\javax.mail-api-1.6.2.jar;maximo\\lib\\log4j-core-2.25.3.jar\"";
+        // Build classpath - auto scan maximo/lib/*.jar
+        string classpath = "bin;maximo\\businessobjects.jar;lib\\snakeyaml-2.5.jar";
+        string libDir = Path.Combine(dir, "maximo", "lib");
+        if (Directory.Exists(libDir)) {
+            foreach (string jar in Directory.GetFiles(libDir, "*.jar")) {
+                classpath += ";" + jar;
+            }
+        }
+        classpath = "\"" + classpath + "\"";
 
         ProcessStartInfo psi = new ProcessStartInfo();
         psi.FileName = javaCmd;
