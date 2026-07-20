@@ -23,6 +23,10 @@
     <cp>maximo\lib\db2jcc.jar</cp>
     <cp>maximo\lib\db2jcc_license_cu.jar</cp>
     <cp>maximo\lib\icu4j.jar</cp>
+    <cp>maximo\lib\j2ee.jar</cp>
+    <cp>maximo\lib\javax.mail-api-1.6.2.jar</cp>
+    <cp>maximo\lib\log4j-core-2.25.3.jar</cp>
+    <cp>maximo\businessobjects.jar</cp>
   </classPath>
   <jre>
     <path>%JDK_HOME%\jre</path>

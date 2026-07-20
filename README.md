@@ -28,8 +28,8 @@ maximo/lib/
 ├── db2jcc_license_cu.jar    # DB2 JDBC 许可
 ├── icu4j.jar                # Unicode/国际化支持
 ├── j2ee.jar                 # Java EE API
-└── javax.mail-api-1.6.2.jar # JavaMail API
-```
+├── javax.mail-api-1.6.2.jar # JavaMail API
+├── log4j-core-2.25.3.jar    # Apache Log4j 核心库```
 
 ### 其他依赖
 

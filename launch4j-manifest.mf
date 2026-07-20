@@ -1,4 +1,4 @@
 Manifest-Version: 1.0
 Main-Class: ConfigDBUI
-Class-Path: lib/snakeyaml-2.5.jar lib/db2jcc.jar lib/db2jcc_license_cu.jar lib/icu4j.jar
+Class-Path: lib/snakeyaml-2.5.jar lib/db2jcc.jar lib/db2jcc_license_cu.jar lib/icu4j.jar lib/j2ee.jar lib/javax.mail-api-1.6.2.jar lib/log4j-core-2.25.3.jar businessobjects.jar
 

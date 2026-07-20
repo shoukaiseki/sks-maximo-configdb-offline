@@ -44,5 +44,5 @@ if not exist "bin\ConfigDBUI.class" (
 )
 
 echo Starting ...
-"%JAVA_CMD%" -cp "bin;lib\snakeyaml-2.5.jar;maximo\lib\db2jcc.jar;maximo\lib\db2jcc_license_cu.jar;maximo\lib\icu4j.jar" ConfigDBUI
+"%JAVA_CMD%" -cp "bin;maximo\businessobjects.jar;lib\snakeyaml-2.5.jar;maximo\lib\db2jcc.jar;maximo\lib\db2jcc_license_cu.jar;maximo\lib\icu4j.jar;maximo\lib\j2ee.jar;maximo\lib\javax.mail-api-1.6.2.jar;maximo\lib\log4j-core-2.25.3.jar" ConfigDBUI
 exit /b 0
