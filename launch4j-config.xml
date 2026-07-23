@@ -25,6 +25,9 @@
     <cp>maximo\lib\javax.mail-api-1.6.2.jar</cp>
     <cp>maximo\lib\log4j-core-2.25.3.jar</cp>
     <cp>maximo\lib\log4j-api-2.25.3.jar</cp>
+    <cp>maximo\lib\log4j-1.2-api-2.25.3.jar</cp>
+    <cp>maximo\properties</cp>
+    <cp>maximo\resources</cp>
     <cp>maximo\businessobjects.jar</cp>
   </classPath>
   <jre>
@@ -35,6 +38,42 @@
     <jdkPreference>preferJdk</jdkPreference>
   </jre>
 </launch4jConfig>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

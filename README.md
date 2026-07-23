@@ -29,7 +29,10 @@ maximo/lib/
 ├── icu4j.jar                # Unicode/国际化支持
 ├── j2ee.jar                 # Java EE API
 ├── javax.mail-api-1.6.2.jar # JavaMail API
-├── log4j-core-2.25.3.jar    # Apache Log4j 核心库```
+├── log4j-api-2.25.3.jar     # Apache Log4j API
+├── log4j-core-2.25.3.jar    # Apache Log4j 核心库
+├── log4j-1.2-api-2.25.3.jar # Log4j 1.x 兼容桥接
+```
 
 ### 其他依赖
 

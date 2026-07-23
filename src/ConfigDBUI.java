@@ -44,7 +44,7 @@ public class ConfigDBUI {
     private static final Color COLOR_DB2  = new Color(122, 134, 202);  // 蓝紫色
 
     private static final Font LOG_FONT = new Font("Consolas", Font.PLAIN, 13);
-    private static final Font BTN_FONT = new Font("Microsoft YaHei", Font.BOLD, 13);
+    private static final Font BTN_FONT = new Font("Microsoft YaHei", Font.BOLD, 12);
 
     // UI 组件
     private JFrame frame;
@@ -66,6 +66,7 @@ public class ConfigDBUI {
     private JButton btnSetAdminRestart;
     private JButton btnQueryVars;
     private JButton btnShowJars;
+    private JButton btnLogLevel;
     private JLabel lineCountLabel;
     private JLabel taskStatusLabel;
 
@@ -88,6 +89,13 @@ public class ConfigDBUI {
     private Map<String, String> globalProps = new LinkedHashMap<>();
     private Map<String, EnvConfig> environments = new LinkedHashMap<>();
     private JButton btnSwitchEnv;
+
+    // 调试模式
+    private volatile boolean debugEnabled = false;
+    private String debugPort = "5005";
+    private JToggleButton btnDebug;
+    private Map<String, String> extraEnv = new LinkedHashMap<>();
+    private java.util.List<String> configDBArgs = new java.util.ArrayList<>();
 
     private static class EnvConfig {
         String desc;
@@ -301,6 +309,36 @@ public class ConfigDBUI {
             @SuppressWarnings("unchecked")
             Map<String, Object> mp = (Map<String, Object>) root.get("sks");
             if (mp == null) { appendLog("!! app.yml 缺少 sks 节点", COLOR_STDERR); return; }
+
+            // 读取调试端口（sks.debug-port）
+            Object portObj = mp.get("debug-port");
+            if (portObj != null) debugPort = portObj.toString();
+            appendLog("[INIT] 调试端口: " + debugPort, COLOR_INFO);
+
+            // 读取额外环境变量（sks.env）
+            extraEnv.clear();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> envMap = (Map<String, Object>) mp.get("env");
+            if (envMap != null) {
+                for (Map.Entry<String, Object> e : envMap.entrySet()) {
+                    extraEnv.put(e.getKey(), e.getValue() != null ? e.getValue().toString() : "");
+                }
+                appendLog("[INIT] 额外环境变量: " + extraEnv.size() + " 个", COLOR_INFO);
+            }
+
+            // 读取 ConfigDB 额外参数（sks.configDBArgs）
+            configDBArgs.clear();
+            @SuppressWarnings("unchecked")
+            java.util.List<Object> argList = (java.util.List<Object>) mp.get("configDBArgs");
+            if (argList != null) {
+                for (Object a : argList) {
+                    String s = a.toString().trim();
+                    if (!s.isEmpty()) configDBArgs.add(s);
+                }
+                if (!configDBArgs.isEmpty()) {
+                    appendLog("[INIT] ConfigDB 额外参数: " + String.join(" ", configDBArgs), COLOR_INFO);
+                }
+            }
 
             @SuppressWarnings("unchecked")
             Map<String, Object> props = (Map<String, Object>) mp.get("maximo-properties");
@@ -566,6 +604,476 @@ public class ConfigDBUI {
         scroll.setPreferredSize(new Dimension(600, 300));
 
         JOptionPane.showMessageDialog(frame, scroll, "已加载 JAR", JOptionPane.PLAIN_MESSAGE);
+    }
+
+    // ============================================================
+    // MXLogger 日志级别查询
+    // ============================================================
+    private void runMXLoggerQuery() {
+        appendLog(">> 查询 MXLogger 日志级别", COLOR_START, 1);
+        infoLabel.setText("正在查询日志级别...");
+
+        new Thread(() -> {
+            try {
+                StringBuilder cp = new StringBuilder();
+                cp.append(classPath);
+                // 确保 properties 目录在前面（logging.properties）
+                cp.insert(0, propDir + File.pathSeparator);
+                cp.insert(0, sksRoot.getAbsolutePath() + File.pathSeparator);
+                cp.append(sksRoot.getAbsolutePath()).append(File.pathSeparator).append("bin");
+
+                ArrayList<String> cmdList = new ArrayList<>();
+                cmdList.add(javaCmd);
+                cmdList.add("-cp");
+                cmdList.add(cp.toString());
+                cmdList.add("MXLoggerQuery");
+
+                ProcessBuilder pb = new ProcessBuilder(cmdList);
+                pb.directory(sksRoot);
+                pb.environment().putAll(System.getenv());
+                pb.redirectErrorStream(true);
+                Process p = pb.start();
+
+                StringBuilder sb = new StringBuilder();
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()), 8192)) {
+                    String l; while ((l = r.readLine()) != null) { sb.append(l).append("\n"); }
+                }
+                int exitCode = p.waitFor();
+
+                final String output = sb.toString();
+                final int code = exitCode;
+
+                SwingUtilities.invokeLater(() -> {
+                    // 先输出原始结果到日志（摘要形式）
+                    for (String l : output.split("\n")) {
+                        if (l.startsWith("LOGGER|")) {
+                            String[] parts = l.substring(7).split("\\|", 2);
+                            if (parts.length >= 2) appendLog("  " + parts[0] + " = " + parts[1], COLOR_INFO, 1);
+                        } else if (l.startsWith("ERROR|") || l.startsWith("WARN|")) {
+                            appendLog("  " + l.substring(l.indexOf('|') + 1), l.startsWith("ERROR") ? COLOR_STDERR : COLOR_WARN, 1);
+                        }
+                    }
+                    appendLog("-- MXLogger 查询完毕，退出码: " + code, code == 0 ? COLOR_SUCCESS : COLOR_STDERR, 1);
+                    infoLabel.setText(code == 0 ? "日志级别查询完成" : "日志级别查询失败");
+                    if (code == 0) {
+                        showLoggerDialog(output);
+                    } else {
+                        appendLog(output, COLOR_STDERR, 1);
+                    }
+                });
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> {
+                    appendLog("!! 查询日志级别出错: " + e.getMessage(), COLOR_STDERR, 1);
+                    infoLabel.setText("查询日志级别出错");
+                });
+            }
+        }, "logger-query").start();
+    }
+
+    private void showLoggerDialog(String rawOutput) {
+        // 解析输出行: LOGGER|name|level [来源]
+        java.util.List<String[]> rows = new java.util.ArrayList<>();
+        java.util.List<String> infoLines = new java.util.ArrayList<>();
+        for (String line : rawOutput.split("\n")) {
+            line = line.trim();
+            if (line.startsWith("LOGGER|")) {
+                int lastPipe = line.lastIndexOf('|');
+                int firstParen = line.indexOf('(');
+                String level = firstParen > lastPipe ? line.substring(lastPipe + 1, firstParen).trim() : line.substring(lastPipe + 1);
+                String name = line.substring(7, lastPipe);
+                rows.add(new String[]{name, level});
+            } else if (line.startsWith("ERROR|") || line.startsWith("WARN|") || line.startsWith("INFO|")) {
+                infoLines.add(line.substring(line.indexOf('|') + 1));
+            } else if (line.startsWith("CONFIG|")) {
+                infoLines.add(line);
+            }
+        }
+
+        if (rows.isEmpty()) {
+            JOptionPane.showMessageDialog(frame, "未获取到任何日志级别信息。\n日志记录器缓存为空。",
+                "日志级别", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        // 创建表格
+        String[] columns = {"Logger Name", "Level"};
+        Object[][] data = new Object[rows.size()][2];
+        for (int i = 0; i < rows.size(); i++) {
+            data[i][0] = rows.get(i)[0];
+            data[i][1] = rows.get(i)[1];
+        }
+
+        javax.swing.table.DefaultTableModel model = new javax.swing.table.DefaultTableModel(data, columns) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+        JTable table = new JTable(model);
+        table.setFont(new Font("Consolas", Font.PLAIN, 12));
+        table.setRowHeight(22);
+        table.getColumnModel().getColumn(0).setPreferredWidth(350);
+        table.getColumnModel().getColumn(1).setPreferredWidth(120);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
+
+        // 搜索框
+        JTextField searchField = new JTextField();
+        searchField.putClientProperty("JTextField.placeholderText", "输入 Logger 名称过滤...");
+        searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            private void filter() {
+                String text = searchField.getText().trim().toLowerCase();
+                javax.swing.table.TableRowSorter<javax.swing.table.DefaultTableModel> sorter =
+                    (javax.swing.table.TableRowSorter<javax.swing.table.DefaultTableModel>) table.getRowSorter();
+                if (text.isEmpty()) {
+                    sorter.setRowFilter(null);
+                } else {
+                    sorter.setRowFilter(javax.swing.RowFilter.regexFilter("(?i)" + java.util.regex.Pattern.quote(text)));
+                }
+            }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+        });
+
+        // 设置排序/过滤
+        javax.swing.table.TableRowSorter<javax.swing.table.DefaultTableModel> sorter =
+            new javax.swing.table.TableRowSorter<>(model);
+        table.setRowSorter(sorter);
+
+        JScrollPane scroll = new JScrollPane(table);
+        scroll.setPreferredSize(new Dimension(700, 400));
+
+        // 底部信息栏
+        StringBuilder infoText = new StringBuilder("共 " + rows.size() + " 个日志记录器");
+        for (String info : infoLines) {
+            infoText.append(" | ").append(info);
+        }
+        JLabel countLabel = new JLabel(infoText.toString());
+        countLabel.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+
+        JPanel panel = new JPanel(new BorderLayout(8, 8));
+        panel.add(searchField, BorderLayout.NORTH);
+        panel.add(scroll, BorderLayout.CENTER);
+        panel.add(countLabel, BorderLayout.SOUTH);
+
+        JOptionPane.showMessageDialog(frame, panel, "MXLogger 日志级别", JOptionPane.PLAIN_MESSAGE);
+    }
+
+    // ============================================================
+    // 备份表管理
+    // ============================================================
+    private void runBackupTableList() {
+        appendLog(">> 查询备份表列表", COLOR_START, 1);
+        infoLabel.setText("正在查询备份表...");
+
+        new Thread(() -> {
+            try {
+                StringBuilder cp = new StringBuilder();
+                cp.append(classPath);
+                cp.append(File.pathSeparator).append(sksRoot.getAbsolutePath()).append(File.pathSeparator).append("bin");
+
+                ArrayList<String> cmdList = new ArrayList<>();
+                cmdList.add(javaCmd);
+                cmdList.add("-cp");
+                cmdList.add(cp.toString());
+                cmdList.add("BackupTableQuery");
+                cmdList.add("--sks-root=" + sksRoot.getAbsolutePath());
+                cmdList.add("--action=list");
+
+                ProcessBuilder pb = new ProcessBuilder(cmdList);
+                pb.directory(sksRoot);
+                pb.redirectErrorStream(true);
+                Process p = pb.start();
+
+                StringBuilder sb = new StringBuilder();
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()), 8192)) {
+                    String l; while ((l = r.readLine()) != null) { sb.append(l).append("\n"); }
+                }
+                int exitCode = p.waitFor();
+
+                final String output = sb.toString();
+                final int code = exitCode;
+
+                SwingUtilities.invokeLater(() -> {
+                    if (code == 0) {
+                        java.util.List<String[]> tables = new java.util.ArrayList<>();
+                        StringBuilder initLog = new StringBuilder();
+                        for (String line : output.split("\n")) {
+                            if (line.startsWith("TABLE|")) {
+                                String[] parts = line.substring(6).split("\\|", 2);
+                                if (parts.length == 2) {
+                                    tables.add(new String[]{parts[0], parts[1]});
+                                }
+                            } else if (line.startsWith("SQL|")) {
+                                initLog.append(line).append("\n");
+                            } else if (line.startsWith("INFO|")) {
+                                initLog.append(line.substring(5)).append("\n");
+                            }
+                        }
+                        initLog.append("找到 ").append(tables.size()).append(" 个备份表\n");
+                        showBackupTableDialog(tables, initLog.toString());
+                    } else {
+                        appendLog("  查询备份表失败", COLOR_STDERR, 1);
+                        for (String l : output.split("\n")) appendLog("  " + l, COLOR_STDERR, 1);
+                    }
+                    infoLabel.setText(code == 0 ? "备份表查询完成" : "备份表查询失败");
+                });
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> {
+                    appendLog("!! 查询备份表出错: " + e.getMessage(), COLOR_STDERR, 1);
+                    infoLabel.setText("查询备份表出错");
+                });
+            }
+        }, "backup-list").start();
+    }
+
+    private void showBackupTableDialog(java.util.List<String[]> tableData, String initLog) {
+        // 表格
+        String[] columns = {"原表名称", "备份表名称"};
+        Object[][] data = new Object[tableData.size()][2];
+        for (int i = 0; i < tableData.size(); i++) {
+            data[i][0] = tableData.get(i)[0];
+            data[i][1] = tableData.get(i)[1];
+        }
+
+        javax.swing.table.DefaultTableModel model = new javax.swing.table.DefaultTableModel(data, columns) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+        JTable table = new JTable(model);
+        table.setFont(new Font("Consolas", Font.PLAIN, 12));
+        table.setRowHeight(22);
+        table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        table.getColumnModel().getColumn(0).setPreferredWidth(200);
+        table.getColumnModel().getColumn(1).setPreferredWidth(200);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
+        table.setRowSelectionAllowed(true);
+
+        // 日志框
+        JTextPane logPane = new JTextPane();
+        logPane.setEditable(false);
+        logPane.setFont(new Font("Consolas", Font.PLAIN, 12));
+        logPane.setBackground(new Color(30, 30, 30));
+        logPane.setForeground(new Color(212, 212, 212));
+        StyledDocument logDoc = logPane.getStyledDocument();
+
+        // 按钮
+        JButton btnCount    = createDialogBtn("查询数据量", new Color(26, 115, 232));
+        JButton btnGenInsert = createDialogBtn("插入原表SQL生成", new Color(52, 168, 83));
+        JButton btnGenDrop  = createDialogBtn("删除备份表SQL生成", new Color(200, 80, 60));
+        JButton btnDrop     = createDialogBtn("删除备份表", new Color(180, 50, 40));
+        JButton btnClose    = createDialogBtn("关闭", new Color(100, 100, 100));
+
+        btnGenInsert.setEnabled(false);
+        btnGenDrop.setEnabled(false);
+        btnDrop.setEnabled(false);
+
+        // 非模态对话框
+        JDialog dialog = new JDialog(frame, "备份表管理", false);
+
+        // ---- helper: 追加日志 ----
+        java.util.function.BiConsumer<String, Color> appendLogFn = (text, color) -> {
+            StyleContext sc = StyleContext.getDefaultStyleContext();
+            AttributeSet attr = sc.addAttribute(SimpleAttributeSet.EMPTY, StyleConstants.Foreground, color);
+            try {
+                logDoc.insertString(logDoc.getLength(), text + "\n", attr);
+                logPane.setCaretPosition(logDoc.getLength());
+            } catch (BadLocationException ignored) {}
+        };
+
+        // ---- helper: 运行 BackupTableQuery 子进程 ----
+        java.util.function.Consumer<String> runAction = (fullAction) -> {
+            new Thread(() -> {
+                try {
+                    StringBuilder cp = new StringBuilder();
+                    cp.append(classPath);
+                    cp.append(File.pathSeparator).append(sksRoot.getAbsolutePath()).append(File.pathSeparator).append("bin");
+
+                    ArrayList<String> cmdList = new ArrayList<>();
+                    cmdList.add(javaCmd);
+                    cmdList.add("-cp");
+                    cmdList.add(cp.toString());
+                    cmdList.add("BackupTableQuery");
+                    cmdList.add("--sks-root=" + sksRoot.getAbsolutePath());
+                    // fullAction 格式: "actionName" 或 "actionName|--param=value"
+                    int pipeIdx = fullAction.indexOf('|');
+                    if (pipeIdx > 0) {
+                        cmdList.add("--action=" + fullAction.substring(0, pipeIdx));
+                        cmdList.add(fullAction.substring(pipeIdx + 1));
+                    } else {
+                        cmdList.add("--action=" + fullAction);
+                    }
+
+                    ProcessBuilder pb = new ProcessBuilder(cmdList);
+                    pb.directory(sksRoot);
+                    pb.redirectErrorStream(true);
+                    Process p = pb.start();
+
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()), 8192)) {
+                        String l; while ((l = r.readLine()) != null) {
+                            final String ll = l;
+                            SwingUtilities.invokeLater(() -> {
+                                if (ll.startsWith("INFO|")) {
+                                    appendLogFn.accept("  " + ll.substring(5), COLOR_INFO);
+                                } else if (ll.startsWith("SQL|")) {
+                                    appendLogFn.accept("  " + ll, COLOR_SUCCESS);
+                                } else if (ll.startsWith("ERROR|")) {
+                                    appendLogFn.accept("  " + ll.substring(6), COLOR_STDERR);
+                                } else if (ll.startsWith("COUNT|")) {
+                                    String[] parts = ll.substring(6).split("\\|");
+                                    if (parts.length >= 4) {
+                                        appendLogFn.accept("  " + parts[0] + " (" + parts[1] + "): 原表=" + parts[2] + ", 备份表=" + parts[3],
+                                            parts[2].equals("0") && !parts[3].equals("0") ? COLOR_WARN : COLOR_STDOUT);
+                                    }
+                                } else {
+                                    appendLogFn.accept("  " + ll, COLOR_STDOUT);
+                                }
+                            });
+                        }
+                    }
+                    int ec = p.waitFor();
+                    final int exitCode = ec;
+                    SwingUtilities.invokeLater(() -> {
+                        appendLogFn.accept("-- 操作完毕，退出码: " + exitCode, exitCode == 0 ? COLOR_SUCCESS : COLOR_STDERR);
+                    });
+                } catch (Exception e) {
+                    SwingUtilities.invokeLater(() -> {
+                        appendLogFn.accept("!! 操作出错: " + e.getMessage(), COLOR_STDERR);
+                    });
+                }
+            }).start();
+        };
+
+        // ---- 按钮事件 ----
+        btnCount.addActionListener(e -> {
+            int[] rows = table.getSelectedRows();
+            if (rows.length == 0) {
+                // 全选
+                rows = new int[model.getRowCount()];
+                for (int i = 0; i < rows.length; i++) rows[i] = i;
+            }
+            StringBuilder params = new StringBuilder();
+            for (int i = 0; i < rows.length; i++) {
+                if (i > 0) params.append(",");
+                params.append(model.getValueAt(rows[i], 0)).append("|").append(model.getValueAt(rows[i], 1));
+            }
+            btnGenInsert.setEnabled(true);
+            btnGenDrop.setEnabled(true);
+            btnDrop.setEnabled(true);
+            appendLogFn.accept(">> 查询数据量 (" + rows.length + " 个表)...", COLOR_START);
+            runAction.accept("count|--tables=" + params.toString());
+        });
+
+        btnGenInsert.addActionListener(e -> {
+            int[] rows = table.getSelectedRows();
+            if (rows.length == 0) { appendLogFn.accept("!! 请先选择备份表行", COLOR_STDERR); return; }
+            appendLogFn.accept(">> 生成 INSERT SQL...", COLOR_START);
+            for (int r : rows) {
+                String orig = (String) model.getValueAt(r, 0);
+                runAction.accept("sql-insert|--table=" + orig);
+            }
+        });
+
+        btnGenDrop.addActionListener(e -> {
+            int[] rows = table.getSelectedRows();
+            if (rows.length == 0) { appendLogFn.accept("!! 请先选择备份表行", COLOR_STDERR); return; }
+            appendLogFn.accept(">> 生成 DROP SQL...", COLOR_START);
+            for (int r : rows) {
+                String orig = (String) model.getValueAt(r, 0);
+                runAction.accept("sql-drop|--table=" + orig);
+            }
+        });
+
+        btnDrop.addActionListener(e -> {
+            int[] rows = table.getSelectedRows();
+            if (rows.length == 0) { appendLogFn.accept("!! 请先选择备份表行", COLOR_STDERR); return; }
+            // 验证：备份表数据量不为0且原表数据量为0 -> 不可删除
+            int confirm = JOptionPane.showConfirmDialog(dialog,
+                "确定要删除选中的 " + rows.length + " 个备份表吗？",
+                "确认删除", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (confirm != JOptionPane.YES_OPTION) return;
+            appendLogFn.accept(">> 删除备份表...", COLOR_START);
+            for (int r : rows) {
+                String orig = (String) model.getValueAt(r, 0);
+                runAction.accept("drop|--table=" + orig);
+            }
+        });
+
+        btnClose.addActionListener(e -> dialog.dispose());
+
+        // ---- 布局 ----
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        btnPanel.add(btnCount);
+        btnPanel.add(btnGenInsert);
+        btnPanel.add(btnGenDrop);
+        btnPanel.add(btnDrop);
+        btnPanel.add(Box.createHorizontalGlue());
+        btnPanel.add(btnClose);
+
+        JScrollPane tableScroll = new JScrollPane(table);
+        tableScroll.setPreferredSize(new Dimension(380, 350));
+        JScrollPane logScroll = new JScrollPane(logPane);
+        logScroll.setPreferredSize(new Dimension(380, 350));
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tableScroll, logScroll);
+        splitPane.setDividerLocation(380);
+        splitPane.setResizeWeight(0.45);
+
+        JPanel panel = new JPanel(new BorderLayout(0, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        panel.add(btnPanel, BorderLayout.NORTH);
+        panel.add(splitPane, BorderLayout.CENTER);
+
+        dialog.getContentPane().add(panel);
+        dialog.setSize(850, 500);
+        dialog.setMinimumSize(new Dimension(700, 400));
+        dialog.setLocationRelativeTo(frame);
+
+        // 写入初始日志（备份表查询结果 SQL）
+        if (initLog != null && !initLog.isEmpty()) {
+            StyleContext sc = StyleContext.getDefaultStyleContext();
+            AttributeSet attr = sc.addAttribute(SimpleAttributeSet.EMPTY, StyleConstants.Foreground, COLOR_INFO);
+            try {
+                logDoc.insertString(0, initLog, attr);
+            } catch (BadLocationException ignored) {}
+        }
+
+        dialog.setVisible(true);
+    }
+
+    private JButton createDialogBtn(String text, Color bg) {
+        Color disabledBg = new Color(0x4A, 0x50, 0x56);  // 深灰
+        Color disabledFg = new Color(0xE8, 0x38, 0x38);  // 暗红
+        Color disabledBorder = new Color(0xFF, 0x33, 0x33); // 红色细描边
+        JButton btn = new JButton(text) {
+            public void setEnabled(boolean enabled) {
+                super.setEnabled(enabled);
+                if (enabled) {
+                    setBackground(bg);
+                    setForeground(Color.WHITE);
+                    setBorder(BorderFactory.createEmptyBorder(8, 18, 8, 18));
+                    setCursor(new Cursor(Cursor.HAND_CURSOR));
+                } else {
+                    setBackground(disabledBg);
+                    setForeground(disabledFg);
+                    setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(disabledBorder, 1),
+                        BorderFactory.createEmptyBorder(7, 17, 7, 17)
+                    ));
+                    setCursor(new Cursor(Cursor.DEFAULT_CURSOR));
+                }
+            }
+        };
+        btn.setFont(BTN_FONT);
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setOpaque(true);
+        btn.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) {
+                if (btn.isEnabled()) btn.setBackground(bg.darker());
+            }
+            public void mouseExited(MouseEvent e) {
+                if (btn.isEnabled()) btn.setBackground(bg);
+            }
+        });
+        btn.setEnabled(false);
+        return btn;
     }
 
     // ============================================================
@@ -916,6 +1424,28 @@ public class ConfigDBUI {
         rightRow1.add(btnShowJars);
         rightRow1.add(Box.createHorizontalStrut(8));
         rightRow1.add(btnSwitchEnv);
+        // 调试模式切换（在右上角）
+        rightRow1.add(Box.createHorizontalStrut(12));
+        btnDebug = new JToggleButton("调试: OFF");
+        btnDebug.setFont(BTN_FONT);
+        btnDebug.setForeground(Color.WHITE);
+        btnDebug.setBackground(new Color(100, 100, 100));
+        btnDebug.setFocusPainted(false);
+        btnDebug.setBorderPainted(false);
+        btnDebug.setOpaque(true);
+        btnDebug.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        btnDebug.setBorder(BorderFactory.createEmptyBorder(8, 14, 8, 14));
+        btnDebug.addActionListener(e -> {
+            debugEnabled = btnDebug.isSelected();
+            if (debugEnabled) {
+                btnDebug.setText("调试: ON");
+                btnDebug.setBackground(new Color(220, 80, 60));
+            } else {
+                btnDebug.setText("调试: OFF");
+                btnDebug.setBackground(new Color(100, 100, 100));
+            }
+        });
+        rightRow1.add(btnDebug);
         row1.add(rightRow1, BorderLayout.EAST);
 
         // 第二行：数据库快速操作
@@ -927,6 +1457,7 @@ public class ConfigDBUI {
         btnSetAdminRestart    = createButton("ADMINRESTART=OFF", new Color(160, 120, 100), e -> runSqlTask("ADMINRESTART=OFF",
             "update maxvars set VARVALUE='OFF' where varname in ('ADMINRESTART')", true));
         btnQueryVars = createButton("查询变量", new Color(90, 170, 140), e -> runQueryVars());
+        btnLogLevel  = createButton("备份表管理", new Color(160, 120, 180), e -> runBackupTableList());
 
         JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         row2.setBackground(Color.WHITE);
@@ -936,6 +1467,7 @@ public class ConfigDBUI {
         row2.add(btnSetAdminRestart);
         row2.add(Box.createHorizontalStrut(12));
         row2.add(btnQueryVars);
+        row2.add(btnLogLevel);
 
         toolbar.add(row1);
         toolbar.add(row2);
@@ -1020,20 +1552,37 @@ public class ConfigDBUI {
     }
 
     private JButton createButton(String text, Color bg, ActionListener listener, boolean enabled) {
-        JButton btn = new JButton(text);
+        Color disabledBg = new Color(0x4A, 0x50, 0x56);
+        Color disabledFg = new Color(0xE8, 0x38, 0x38);
+        Color disabledBorder = new Color(0xFF, 0x33, 0x33);
+        JButton btn = new JButton(text) {
+            public void setEnabled(boolean en) {
+                super.setEnabled(en);
+                if (en) {
+                    setBackground(bg);
+                    setForeground(Color.WHITE);
+                    setBorder(BorderFactory.createEmptyBorder(8, 18, 8, 18));
+                    setCursor(new Cursor(Cursor.HAND_CURSOR));
+                } else {
+                    setBackground(disabledBg);
+                    setForeground(disabledFg);
+                    setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(disabledBorder, 1),
+                        BorderFactory.createEmptyBorder(7, 17, 7, 17)
+                    ));
+                    setCursor(new Cursor(Cursor.DEFAULT_CURSOR));
+                }
+            }
+        };
         btn.setFont(BTN_FONT);
-        btn.setForeground(Color.WHITE);
-        btn.setBackground(bg);
         btn.setFocusPainted(false);
         btn.setBorderPainted(false);
         btn.setOpaque(true);
-        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btn.setBorder(BorderFactory.createEmptyBorder(8, 18, 8, 18));
         btn.setEnabled(enabled);
         btn.addActionListener(listener);
         btn.addMouseListener(new MouseAdapter() {
             public void mouseEntered(MouseEvent e) { if (btn.isEnabled()) btn.setBackground(bg.darker()); }
-            public void mouseExited(MouseEvent e) { btn.setBackground(bg); }
+            public void mouseExited(MouseEvent e) { if (btn.isEnabled()) btn.setBackground(bg); }
         });
         return btn;
     }
@@ -1051,7 +1600,15 @@ public class ConfigDBUI {
         if (type.equals("configdb")) {
             mainClass = "psdi.configure.ConfigDB";
             displayName = "ConfigDB";
-            extraArgs = new String[]{"-l", "-e", "-r"};
+            String[] baseArgs = {"-l", "-e", "-r"};
+            if (!configDBArgs.isEmpty()) {
+                java.util.List<String> merged = new java.util.ArrayList<>();
+                Collections.addAll(merged, baseArgs);
+                merged.addAll(configDBArgs);
+                extraArgs = merged.toArray(new String[0]);
+            } else {
+                extraArgs = baseArgs;
+            }
         } else {
             mainClass = "psdi.configure.RestoreFromBackup";
             displayName = "RestoreFromBackup";
@@ -1067,6 +1624,9 @@ public class ConfigDBUI {
         appendLog(">> 开始执行 " + displayName, COLOR_START);
         appendLog(">> Java: " + javaCmd, COLOR_INFO);
         appendLog(">> 类: " + mainClass, COLOR_INFO);
+        if (debugEnabled) {
+            appendLog(">> 调试模式: ON (监听端口 " + debugPort + ", 等待 IDE 连接...)", COLOR_WARN);
+        }
 
         new Thread(() -> {
             try {
@@ -1074,6 +1634,9 @@ public class ConfigDBUI {
                 ProcessBuilder pb = new ProcessBuilder(cmd);
                 pb.directory(sksRoot);
                 pb.environment().putAll(System.getenv());
+                for (Map.Entry<String, String> ev : extraEnv.entrySet()) {
+                    pb.environment().put(ev.getKey(), ev.getValue());
+                }
                 pb.redirectErrorStream(false);
                 currentProcess = pb.start();
 
@@ -1115,7 +1678,11 @@ public class ConfigDBUI {
 
     private String[] buildCommand(String mainClass, String[] extraArgs) {
         ArrayList<String> args = new ArrayList<>();
-        args.add(javaCmd); args.add("-Xmx1024m"); args.add("-cp");
+        args.add(javaCmd);
+        if (debugEnabled) {
+            args.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:" + debugPort);
+        }
+        args.add("-Xmx1024m"); args.add("-cp");
         args.add(sksRoot.getAbsolutePath() + File.pathSeparator + classPath);
         args.add(mainClass);
         if (extraArgs != null) Collections.addAll(args, extraArgs);
@@ -1198,6 +1765,12 @@ public class ConfigDBUI {
     // 停止进程
     // ============================================================
     private void stopProcess() {
+        if (!running) return;
+        int opt = JOptionPane.showConfirmDialog(frame,
+            "确定要停止当前任务吗？\n子进程将被强制终止。",
+            "确认停止", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (opt != JOptionPane.YES_OPTION) return;
+
         if (currentProcess != null && currentProcess.isAlive()) {
             currentProcess.destroyForcibly();
             appendLog("!! 进程已强制终止", COLOR_STDERR);

@@ -1,4 +1,16 @@
 sks:
+  # debug端口号
+  debug-port: 5005
+  # 子进程额外环境变量（可选）
+  env:
+    MXE_MASDEPLOYED: "1"
+  # ConfigDB 额外命令行参数，默认已携带 -k -l -e -r
+  configDBArgs:
+    # - -k   # properties 目录（默认已添加）
+    # - -l   # 输出日志文件（默认已添加）
+    # - -e   # 执行 SQL（默认已添加）
+    # - -r   # 之后执行 RestoreFromBackup（默认已添加）
+    - -z     # 生成 db2text_configdb.bat/sh 脚本
   maximo-properties:
     default: local
     global:

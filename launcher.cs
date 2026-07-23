@@ -23,7 +23,7 @@ class Launcher {
 
         string jarDir = Path.Combine(dir, "bin");
         // Build classpath - auto scan maximo/lib/*.jar
-        string classpath = "bin;maximo\\businessobjects.jar;lib\\snakeyaml-2.5.jar";
+        string classpath = "bin;maximo\\properties;maximo\\resources;maximo\\businessobjects.jar;lib\\snakeyaml-2.5.jar";
         string libDir = Path.Combine(dir, "maximo", "lib");
         if (Directory.Exists(libDir)) {
             foreach (string jar in Directory.GetFiles(libDir, "*.jar")) {

@@ -19,11 +19,11 @@ if not "%JDK_HOME%"=="" (
   if exist "%JDK_HOME%\bin\javac.exe" set JAVAC_CMD=%JDK_HOME%\bin\javac.exe
 )
 
-echo Compiling src\ConfigDBUI.java to bin\ ...
+echo Compiling src\*.java to bin\ ...
 
 if not exist bin mkdir bin
 
-"%JAVAC_CMD%" -encoding UTF-8 -cp "lib\snakeyaml-2.5.jar" -d "bin" "src\ConfigDBUI.java"
+"%JAVAC_CMD%" -encoding UTF-8 -cp "lib\snakeyaml-2.5.jar;maximo\businessobjects.jar" -d "bin" "src\ConfigDBUI.java" "src\MXLoggerQuery.java" "src\BackupTableQuery.java"
 if !errorlevel! neq 0 (
   echo.
   echo Build FAILED!
@@ -31,4 +31,4 @@ if !errorlevel! neq 0 (
   exit /b 1
 )
 
-echo Build successful - bin\ConfigDBUI.class
+echo Build successful - bin\ConfigDBUI.class bin\MXLoggerQuery.class bin\BackupTableQuery.class

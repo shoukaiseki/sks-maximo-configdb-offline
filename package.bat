@@ -32,7 +32,6 @@ if not exist bin mkdir bin
 "%JAVAC_CMD%" -encoding UTF-8 -cp "lib\snakeyaml-2.5.jar" -d "bin" "src\ConfigDBUI.java"
 if !errorlevel! neq 0 (
   echo Compile FAILED!
-  pause
   exit /b 1
 )
 
@@ -42,7 +41,6 @@ if not exist build mkdir build
 "%JAR_CMD%" cfm build\sks_configdb.jar launch4j-manifest.mf -C bin .
 if !errorlevel! neq 0 (
   echo Create JAR FAILED!
-  pause
   exit /b 1
 )
 

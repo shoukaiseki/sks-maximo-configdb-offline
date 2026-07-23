@@ -28,7 +28,6 @@ if "%JAVA_CMD%"=="" (
 
 if "%JAVA_CMD%"=="" (
   echo ERROR: Java not found. Edit config.properties
-  pause
   exit /b 1
 )
 
@@ -39,14 +38,13 @@ if not exist "bin\ConfigDBUI.class" (
   echo ERROR: bin\ConfigDBUI.class not found.
   echo Please run build.bat first to compile the source.
   echo.
-  pause
   exit /b 1
 )
 
 echo Starting ...
 
 REM Build classpath - auto scan maximo\lib\*.jar
-set CLASSPATH=bin;maximo\businessobjects.jar;lib\snakeyaml-2.5.jar
+set CLASSPATH=bin;maximo\properties;maximo\resources;maximo\businessobjects.jar;lib\snakeyaml-2.5.jar
 for %%j in (maximo\lib\*.jar) do set CLASSPATH=!CLASSPATH!;%%j
 
 "%JAVA_CMD%" -cp "!CLASSPATH!" ConfigDBUI
