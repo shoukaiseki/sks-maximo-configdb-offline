@@ -1642,12 +1642,12 @@ public class ConfigDBUI {
 
                 Thread outT = new Thread(() -> {
                     try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getInputStream()), 8192)) {
-                        String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLog(ll, COLOR_STDOUT)); }
+                        String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLogRawToTab(ll, COLOR_STDOUT, 0)); }
                     } catch (IOException ignored) {}
                 });
                 Thread errT = new Thread(() -> {
                     try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getErrorStream()), 8192)) {
-                        String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLog(ll, COLOR_STDERR)); }
+                        String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLogRawToTab(ll, COLOR_STDERR, 0)); }
                     } catch (IOException ignored) {}
                 });
                 outT.start(); errT.start();
@@ -1797,13 +1797,31 @@ public class ConfigDBUI {
     private void appendLogToTab(String text, Color color, boolean bold, int tabIndex) {
         JTextPane pane = (tabIndex == 0) ? logPaneCfg : logPaneSql;
         StyledDocument targetDoc = (tabIndex == 0) ? docCfg : docSql;
+        appendToDoc(pane, targetDoc, text, color, bold, tabIndex == 0);
+    }
+
+    private void appendLogRawToTab(String text, Color color, int tabIndex) {
+        JTextPane pane = (tabIndex == 0) ? logPaneCfg : logPaneSql;
+        StyledDocument targetDoc = (tabIndex == 0) ? docCfg : docSql;
+        try {
+            StyleContext sc = StyleContext.getDefaultStyleContext();
+            AttributeSet attr = sc.addAttribute(SimpleAttributeSet.EMPTY, StyleConstants.Foreground, color);
+            targetDoc.insertString(targetDoc.getLength(), text + "\n", attr);
+            if (tabIndex == 0) cfgLineCount++; else sqlLineCount++;
+            lineCountLabel.setText((cfgLineCount + sqlLineCount) + " 行");
+            pane.setCaretPosition(targetDoc.getLength());
+        } catch (BadLocationException ignored) {}
+    }
+
+    private void appendToDoc(JTextPane pane, StyledDocument targetDoc, String text, Color color, boolean bold, boolean countLine) {
         try {
             StyleContext sc = StyleContext.getDefaultStyleContext();
             AttributeSet attr = sc.addAttribute(SimpleAttributeSet.EMPTY, StyleConstants.Foreground, color);
             if (bold) attr = sc.addAttribute(attr, StyleConstants.Bold, true);
             String ts = new java.text.SimpleDateFormat("HH:mm:ss").format(new java.util.Date());
             targetDoc.insertString(targetDoc.getLength(), "[" + ts + "] " + text + "\n", attr);
-            if (tabIndex == 0) cfgLineCount++; else sqlLineCount++;
+            if (countLine) cfgLineCount++;
+            else sqlLineCount++;
             lineCountLabel.setText((cfgLineCount + sqlLineCount) + " 行");
             pane.setCaretPosition(targetDoc.getLength());
         } catch (BadLocationException ignored) {}
