@@ -67,6 +67,7 @@ public class ConfigDBUI {
     private JButton btnQueryVars;
     private JButton btnShowJars;
     private JButton btnLogLevel;
+    private JButton btnShowUsers;
     private JLabel lineCountLabel;
     private JLabel taskStatusLabel;
 
@@ -140,6 +141,7 @@ public class ConfigDBUI {
                 String escapedSql = sql.replace("\"", "\\\"");
                 ArrayList<String> cmdList = new ArrayList<>();
                 cmdList.add(javaCmd);
+                cmdList.add("-Dfile.encoding=UTF-8");
                 cmdList.add("-cp");
                 cmdList.add(sksRoot.getAbsolutePath() + File.pathSeparator + classPath);
                 cmdList.add("ConfigDBUI");
@@ -153,12 +155,12 @@ public class ConfigDBUI {
                 Process p = pb.start();
 
                 Thread outT = new Thread(() -> {
-                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()), 8192)) {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"), 8192)) {
                         String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLog(ll, COLOR_STDOUT, 1)); }
                     } catch (IOException ignored) {}
                 });
                 Thread errT = new Thread(() -> {
-                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getErrorStream()), 8192)) {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getErrorStream(), "UTF-8"), 8192)) {
                         String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLog(ll, COLOR_STDERR, 1)); }
                     } catch (IOException ignored) {}
                 });
@@ -198,6 +200,7 @@ public class ConfigDBUI {
                 String escapedSql = sql.replace("\"", "\\\"");
                 ArrayList<String> cmdList = new ArrayList<>();
                 cmdList.add(javaCmd);
+                cmdList.add("-Dfile.encoding=UTF-8");
                 cmdList.add("-cp");
                 cmdList.add(sksRoot.getAbsolutePath() + File.pathSeparator + classPath);
                 cmdList.add("ConfigDBUI");
@@ -211,7 +214,7 @@ public class ConfigDBUI {
                 Process p = pb.start();
 
                 StringBuilder sb = new StringBuilder();
-                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()), 8192)) {
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"), 8192)) {
                     String l; while ((l = r.readLine()) != null) { sb.append(l).append("\n"); }
                 }
 
@@ -237,6 +240,7 @@ public class ConfigDBUI {
                         String escapedCount = countSql.replace("\"", "\\\"");
                         ArrayList<String> countCmd = new ArrayList<>();
                         countCmd.add(javaCmd);
+                        countCmd.add("-Dfile.encoding=UTF-8");
                         countCmd.add("-cp");
                         countCmd.add(sksRoot.getAbsolutePath() + File.pathSeparator + classPath);
                         countCmd.add("ConfigDBUI");
@@ -250,7 +254,7 @@ public class ConfigDBUI {
                         Process p2 = pb2.start();
 
                         StringBuilder sb2 = new StringBuilder();
-                        try (BufferedReader r = new BufferedReader(new InputStreamReader(p2.getInputStream()), 8192)) {
+                        try (BufferedReader r = new BufferedReader(new InputStreamReader(p2.getInputStream(), "UTF-8"), 8192)) {
                             String l; while ((l = r.readLine()) != null) { sb2.append(l).append("\n"); }
                         }
                         int cntExit = p2.waitFor();
@@ -624,6 +628,7 @@ public class ConfigDBUI {
 
                 ArrayList<String> cmdList = new ArrayList<>();
                 cmdList.add(javaCmd);
+                cmdList.add("-Dfile.encoding=UTF-8");
                 cmdList.add("-cp");
                 cmdList.add(cp.toString());
                 cmdList.add("MXLoggerQuery");
@@ -635,7 +640,7 @@ public class ConfigDBUI {
                 Process p = pb.start();
 
                 StringBuilder sb = new StringBuilder();
-                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()), 8192)) {
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"), 8192)) {
                     String l; while ((l = r.readLine()) != null) { sb.append(l).append("\n"); }
                 }
                 int exitCode = p.waitFor();
@@ -771,6 +776,7 @@ public class ConfigDBUI {
 
                 ArrayList<String> cmdList = new ArrayList<>();
                 cmdList.add(javaCmd);
+                cmdList.add("-Dfile.encoding=UTF-8");
                 cmdList.add("-cp");
                 cmdList.add(cp.toString());
                 cmdList.add("BackupTableQuery");
@@ -783,14 +789,13 @@ public class ConfigDBUI {
                 Process p = pb.start();
 
                 StringBuilder sb = new StringBuilder();
-                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()), 8192)) {
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"), 8192)) {
                     String l; while ((l = r.readLine()) != null) { sb.append(l).append("\n"); }
                 }
                 int exitCode = p.waitFor();
 
                 final String output = sb.toString();
                 final int code = exitCode;
-
                 SwingUtilities.invokeLater(() -> {
                     if (code == 0) {
                         java.util.List<String[]> tables = new java.util.ArrayList<>();
@@ -848,7 +853,7 @@ public class ConfigDBUI {
         // 日志框
         JTextPane logPane = new JTextPane();
         logPane.setEditable(false);
-        logPane.setFont(new Font("Consolas", Font.PLAIN, 12));
+        logPane.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
         logPane.setBackground(new Color(30, 30, 30));
         logPane.setForeground(new Color(212, 212, 212));
         StyledDocument logDoc = logPane.getStyledDocument();
@@ -887,6 +892,7 @@ public class ConfigDBUI {
 
                     ArrayList<String> cmdList = new ArrayList<>();
                     cmdList.add(javaCmd);
+                    cmdList.add("-Dfile.encoding=UTF-8");
                     cmdList.add("-cp");
                     cmdList.add(cp.toString());
                     cmdList.add("BackupTableQuery");
@@ -905,7 +911,7 @@ public class ConfigDBUI {
                     pb.redirectErrorStream(true);
                     Process p = pb.start();
 
-                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()), 8192)) {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"), 8192)) {
                         String l; while ((l = r.readLine()) != null) {
                             final String ll = l;
                             SwingUtilities.invokeLater(() -> {
@@ -1034,6 +1040,275 @@ public class ConfigDBUI {
             } catch (BadLocationException ignored) {}
         }
 
+        dialog.setVisible(true);
+    }
+
+    // ============================================================
+    // 查看用户 / 重置密码
+    // ============================================================
+    private void runUserList() {
+        String sql = "select userid,personid,LOGINID,(select displayname from person where personid=maxuser.personid) as displayname from maxuser";
+        appendLog(">> 查询用户列表", COLOR_START, 1);
+        appendLog(">> SQL: " + sql, COLOR_INFO, 1);
+        infoLabel.setText("正在查询用户...");
+
+        new Thread(() -> {
+            try {
+                String escapedSql = sql.replace("\"", "\\\"");
+                ArrayList<String> cmdList = new ArrayList<>();
+                cmdList.add(javaCmd);
+                cmdList.add("-Dfile.encoding=UTF-8");
+                cmdList.add("-cp");
+                cmdList.add(sksRoot.getAbsolutePath() + File.pathSeparator + classPath);
+                cmdList.add("ConfigDBUI");
+                cmdList.add("--sql=" + escapedSql);
+                cmdList.add("--sks-root=" + sksRoot.getAbsolutePath());
+
+                ProcessBuilder pb = new ProcessBuilder(cmdList);
+                pb.directory(sksRoot);
+                pb.redirectErrorStream(true);
+                Process p = pb.start();
+
+                StringBuilder sb = new StringBuilder();
+                try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"), 8192)) {
+                    String l; while ((l = r.readLine()) != null) { sb.append(l).append("\n"); }
+                }
+                int exitCode = p.waitFor();
+
+                final String output = sb.toString();
+                final int code = exitCode;
+
+                SwingUtilities.invokeLater(() -> {
+                    if (code == 0) {
+                        java.util.List<String[]> users = new java.util.ArrayList<>();
+                        for (String line : output.split("\n")) {
+                            if (line.startsWith("  USERID=")) {
+                                // 输出格式: USERID=xxx, PERSONID=yyy, LOGINID=zzz, DISPLAYNAME=www
+                                String[] parts = line.trim().split(", ");
+                                String[] row = new String[4];
+                                for (String cell : parts) {
+                                    int idx = cell.indexOf('=');
+                                    if (idx < 0) continue;
+                                    String name = cell.substring(0, idx);
+                                    String val = cell.substring(idx + 1);
+                                    if ("USERID".equals(name)) row[0] = val;
+                                    else if ("PERSONID".equals(name)) row[1] = val;
+                                    else if ("LOGINID".equals(name)) row[2] = val;
+                                    else if ("DISPLAYNAME".equals(name)) row[3] = "null".equals(val) ? "" : val;
+                                }
+                                if (row[0] != null) users.add(row);
+                            }
+                        }
+                        showUserDialog(users);
+                    } else {
+                        appendLog("  查询用户失败", COLOR_STDERR, 1);
+                        for (String l : output.split("\n")) appendLog("  " + l, COLOR_STDERR, 1);
+                    }
+                    infoLabel.setText(code == 0 ? "用户查询完成" : "用户查询失败");
+                });
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> {
+                    appendLog("!! 查询用户出错: " + e.getMessage(), COLOR_STDERR, 1);
+                    infoLabel.setText("查询用户出错");
+                });
+            }
+        }, "user-list").start();
+    }
+
+    private void showUserDialog(java.util.List<String[]> userData) {
+        // 表格
+        String[] columns = {"用户ID", "人员ID", "登录ID", "显示名称", "操作"};
+        Object[][] data = new Object[userData.size()][5];
+        for (int i = 0; i < userData.size(); i++) {
+            data[i][0] = userData.get(i)[0];
+            data[i][1] = userData.get(i)[1];
+            data[i][2] = userData.get(i)[2];
+            data[i][3] = userData.get(i)[3];
+        }
+
+        javax.swing.table.DefaultTableModel model = new javax.swing.table.DefaultTableModel(data, columns) {
+            @Override public boolean isCellEditable(int r, int c) { return c == 4; }
+        };
+        JTable table = new JTable(model);
+        table.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+        table.setRowHeight(26);
+        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        table.getColumnModel().getColumn(0).setPreferredWidth(80);
+        table.getColumnModel().getColumn(1).setPreferredWidth(80);
+        table.getColumnModel().getColumn(2).setPreferredWidth(100);
+        table.getColumnModel().getColumn(3).setPreferredWidth(160);
+        table.getColumnModel().getColumn(4).setPreferredWidth(80);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        table.setRowSelectionAllowed(true);
+
+        // 日志框
+        JTextPane logPane = new JTextPane();
+        logPane.setEditable(false);
+        logPane.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+        logPane.setBackground(new Color(30, 30, 30));
+        logPane.setForeground(new Color(212, 212, 212));
+        StyledDocument logDoc = logPane.getStyledDocument();
+
+        // 非模态对话框
+        JDialog dialog = new JDialog(frame, "用户管理", false);
+
+        // ---- helper: 追加日志 ----
+        java.util.function.BiConsumer<String, Color> appendLogFn = (text, color) -> {
+            StyleContext sc = StyleContext.getDefaultStyleContext();
+            AttributeSet attr = sc.addAttribute(SimpleAttributeSet.EMPTY, StyleConstants.Foreground, color);
+            try {
+                logDoc.insertString(logDoc.getLength(), text + "\n", attr);
+                logPane.setCaretPosition(logDoc.getLength());
+            } catch (BadLocationException ignored) {}
+        };
+
+        // ---- helper: 运行 ResetPasswords 子进程（新密码通过临时 .bytes 文件传入）----
+        java.util.function.BiConsumer<String, String> runReset = (userid, newpwd) -> {
+            if (running) {
+                appendLogFn.accept("!! ConfigDB/RestoreFromBackup 执行中，无法重置密码", COLOR_STDERR);
+                return;
+            }
+            new Thread(() -> {
+                File bytesFile = null;
+                try {
+                    // 生成临时 .bytes 文件: 表名, 关键列, 关键值, 更新列, 更新值
+                    String ts = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS").format(new java.util.Date());
+                    File logsDir = new File(sksRoot, "logs");
+                    if (!logsDir.exists()) logsDir.mkdirs();
+                    String prefix = new File(logsDir, "reset_" + userid + "_" + ts).getAbsolutePath();
+                    bytesFile = new File(prefix + ".bytes");
+                    try (PrintWriter w = new PrintWriter(new FileWriter(bytesFile))) {
+                        w.println("maxuser, userid, " + userid + ", password, " + newpwd);
+                    }
+                    appendLogFn.accept("  bytes 文件: " + bytesFile.getAbsolutePath(), COLOR_INFO);
+
+                    StringBuilder cp = new StringBuilder();
+                    cp.append(sksRoot.getAbsolutePath()).append(File.pathSeparator).append(classPath);
+
+                    ArrayList<String> cmdList = new ArrayList<>();
+                    cmdList.add(javaCmd);
+                    cmdList.add("-Dfile.encoding=UTF-8");
+                    cmdList.add("-cp");
+                    cmdList.add(cp.toString());
+                    cmdList.add("psdi.util.ResetPasswords");
+                    cmdList.add("-k" + propDir);
+                    cmdList.add("-u" + userid);
+                    cmdList.add("-i" + prefix);
+
+                    ProcessBuilder pb = new ProcessBuilder(cmdList);
+                    pb.directory(sksRoot);
+                    pb.redirectErrorStream(true);
+                    Process p = pb.start();
+
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"), 8192)) {
+                        String l; while ((l = r.readLine()) != null) {
+                            final String ll = l;
+                            SwingUtilities.invokeLater(() -> appendLogFn.accept("  " + ll, COLOR_STDOUT));
+                        }
+                    }
+                    int ec = p.waitFor();
+                    final int exitCode = ec;
+                    SwingUtilities.invokeLater(() -> {
+                        appendLogFn.accept("-- 重置密码完毕，退出码: " + exitCode, exitCode == 0 ? COLOR_SUCCESS : COLOR_STDERR);
+                    });
+                } catch (Exception e) {
+                    SwingUtilities.invokeLater(() -> {
+                        appendLogFn.accept("!! 重置密码出错: " + e.getMessage(), COLOR_STDERR);
+                    });
+                } finally {
+                    if (bytesFile != null) bytesFile.delete();
+                }
+            }, "reset-password").start();
+        };
+
+        // ---- 操作列按钮（第 5 列）----
+        JButton opBtn = new JButton("重置密码");
+        opBtn.setFont(new Font("Microsoft YaHei", Font.PLAIN, 11));
+        opBtn.setForeground(Color.WHITE);
+        opBtn.setBackground(new Color(200, 80, 60));
+        opBtn.setOpaque(true);
+        opBtn.setFocusPainted(false);
+        opBtn.setBorderPainted(false);
+        opBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        opBtn.setMargin(new Insets(2, 10, 2, 10));
+
+        table.getColumnModel().getColumn(4).setCellRenderer((t, v, isS, isF, row, col) -> {
+            JButton b = new JButton("重置密码");
+            b.setFont(opBtn.getFont());
+            b.setForeground(opBtn.getForeground());
+            b.setBackground(opBtn.getBackground());
+            b.setOpaque(true);
+            b.setFocusPainted(false);
+            b.setBorderPainted(false);
+            b.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            b.setMargin(opBtn.getMargin());
+            return b;
+        });
+
+        class OpButtonEditor extends AbstractCellEditor implements javax.swing.table.TableCellEditor, ActionListener {
+            private final JButton b;
+            private int editRow;
+            OpButtonEditor() {
+                b = new JButton("重置密码");
+                b.setFont(opBtn.getFont());
+                b.setForeground(opBtn.getForeground());
+                b.setBackground(opBtn.getBackground());
+                b.setOpaque(true);
+                b.setFocusPainted(false);
+                b.setBorderPainted(false);
+                b.setCursor(new Cursor(Cursor.HAND_CURSOR));
+                b.setMargin(opBtn.getMargin());
+                b.addActionListener(this);
+            }
+            @Override public Component getTableCellEditorComponent(JTable t, Object v, boolean s1, int r, int c) {
+                editRow = r;
+                return b;
+            }
+            @Override public Object getCellEditorValue() { return "重置密码"; }
+            @Override public void actionPerformed(ActionEvent e) {
+                fireEditingStopped();
+                String userid = String.valueOf(model.getValueAt(editRow, 0));
+                String displayName = String.valueOf(model.getValueAt(editRow, 3));
+
+                JPasswordField pw = new JPasswordField(16);
+                JPasswordField pw2 = new JPasswordField(16);
+                Object[] msg = {"用户: " + userid + (displayName.isEmpty() ? "" : " (" + displayName + ")"), " 输入新密码:", pw, " 再次输入:", pw2};
+                int r = JOptionPane.showConfirmDialog(dialog, msg, "重置密码 [" + userid + "]", JOptionPane.OK_CANCEL_OPTION);
+                if (r != JOptionPane.OK_OPTION) return;
+                String p1 = new String(pw.getPassword());
+                String p2 = new String(pw2.getPassword());
+                if (p1.isEmpty()) {
+                    appendLogFn.accept("!! 密码不能为空", COLOR_STDERR);
+                    return;
+                }
+                if (!p1.equals(p2)) {
+                    appendLogFn.accept("!! 两次输入的密码不一致", COLOR_STDERR);
+                    return;
+                }
+                appendLogFn.accept(">> 重置密码: " + userid, COLOR_START);
+                runReset.accept(userid, p1);
+            }
+        }
+        table.getColumnModel().getColumn(4).setCellEditor(new OpButtonEditor());
+
+        // ---- 布局 ----
+        JScrollPane tableScroll = new JScrollPane(table);
+        tableScroll.setPreferredSize(new Dimension(520, 350));
+        JScrollPane logScroll = new JScrollPane(logPane);
+        logScroll.setPreferredSize(new Dimension(400, 350));
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tableScroll, logScroll);
+        splitPane.setDividerLocation(520);
+        splitPane.setResizeWeight(0.55);
+
+        JPanel panel = new JPanel(new BorderLayout(0, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        panel.add(splitPane, BorderLayout.CENTER);
+
+        dialog.getContentPane().add(panel);
+        dialog.setSize(1000, 500);
+        dialog.setMinimumSize(new Dimension(800, 400));
+        dialog.setLocationRelativeTo(frame);
         dialog.setVisible(true);
     }
 
@@ -1458,6 +1733,7 @@ public class ConfigDBUI {
             "update maxvars set VARVALUE='OFF' where varname in ('ADMINRESTART')", true));
         btnQueryVars = createButton("查询变量", new Color(90, 170, 140), e -> runQueryVars());
         btnLogLevel  = createButton("备份表管理", new Color(160, 120, 180), e -> runBackupTableList());
+        btnShowUsers = createButton("查看用户", new Color(60, 150, 190), e -> runUserList());
 
         JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         row2.setBackground(Color.WHITE);
@@ -1468,6 +1744,7 @@ public class ConfigDBUI {
         row2.add(Box.createHorizontalStrut(12));
         row2.add(btnQueryVars);
         row2.add(btnLogLevel);
+        row2.add(btnShowUsers);
 
         toolbar.add(row1);
         toolbar.add(row2);
@@ -1641,12 +1918,12 @@ public class ConfigDBUI {
                 currentProcess = pb.start();
 
                 Thread outT = new Thread(() -> {
-                    try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getInputStream()), 8192)) {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getInputStream(), "UTF-8"), 8192)) {
                         String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLogRawToTab(ll, COLOR_STDOUT, 0)); }
                     } catch (IOException ignored) {}
                 });
                 Thread errT = new Thread(() -> {
-                    try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getErrorStream()), 8192)) {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getErrorStream(), "UTF-8"), 8192)) {
                         String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLogRawToTab(ll, COLOR_STDERR, 0)); }
                     } catch (IOException ignored) {}
                 });
@@ -1679,6 +1956,7 @@ public class ConfigDBUI {
     private String[] buildCommand(String mainClass, String[] extraArgs) {
         ArrayList<String> args = new ArrayList<>();
         args.add(javaCmd);
+        args.add("-Dfile.encoding=UTF-8");
         if (debugEnabled) {
             args.add("-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:" + debugPort);
         }
@@ -1717,6 +1995,7 @@ public class ConfigDBUI {
                 String escapedSql = sql.replace("\"", "\\\"");
                 ArrayList<String> cmdList = new ArrayList<>();
                 cmdList.add(javaCmd);
+                cmdList.add("-Dfile.encoding=UTF-8");
                 cmdList.add("-cp");
                 cmdList.add(sksRoot.getAbsolutePath() + File.pathSeparator + classPath);
                 cmdList.add("ConfigDBUI");
@@ -1730,12 +2009,12 @@ public class ConfigDBUI {
                 currentProcess = pb.start();
 
                 Thread outT = new Thread(() -> {
-                    try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getInputStream()), 8192)) {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getInputStream(), "UTF-8"), 8192)) {
                         String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLog(ll, COLOR_STDOUT, 1)); }
                     } catch (IOException ignored) {}
                 });
                 Thread errT = new Thread(() -> {
-                    try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getErrorStream()), 8192)) {
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(currentProcess.getErrorStream(), "UTF-8"), 8192)) {
                         String l; while ((l = r.readLine()) != null) { final String ll = l; SwingUtilities.invokeLater(() -> appendLog(ll, COLOR_STDERR, 1)); }
                     } catch (IOException ignored) {}
                 });
