@@ -120,11 +120,12 @@ public class BackupTableQuery {
         // 第一步：按原版逻辑构建 SQL，查出所有存在的备份表名
         // short names: 'XX' || tablename where length(tablename) < num1
         // long names:  'XX' || substr(tablename,1,num2) where length(tablename) >= num1
+        // restoredata 在 DB2 中为 INTEGER（0/1），原版 Util.sYes = "1"，故用 != 1
         String sql = "select tabname from syscat.tables where tabschema = current schema "
             + "and (tabname in (Select 'XX' || tablename From maxtablecfg "
-            + "where length(tablename) < " + num1 + " and restoredata != 'Y') "
+            + "where length(tablename) < " + num1 + " and restoredata != 1) "
             + "or tabname in (Select 'XX' || substr(tablename,1," + num2 + ") From maxtablecfg "
-            + "where length(tablename) >= " + num1 + " and restoredata != 'Y'))";
+            + "where length(tablename) >= " + num1 + " and restoredata != 1))";
 
         System.out.println("SQL|QUERY|" + sql + ";");
 
@@ -216,13 +217,13 @@ public class BackupTableQuery {
             System.out.println("SQL|DROP|commit;");
             st.execute("commit");
             System.out.println("INFO|备份表 " + backup + " 已删除");
-            // 更新 restoredata = 'Y'
-            String updateSql = "update maxtablecfg set restoredata = 'Y' where tablename = '" + table + "'";
+            // 更新 restoredata = 1（INTEGER 类型）
+            String updateSql = "update maxtablecfg set restoredata = 1 where tablename = '" + table + "'";
             System.out.println("SQL|UPDATE|" + updateSql + ";");
             st.execute(updateSql);
             System.out.println("SQL|UPDATE|commit;");
             st.execute("commit");
-            System.out.println("INFO|maxtablecfg.restoredata 已更新为 Y");
+            System.out.println("INFO|maxtablecfg.restoredata 已更新为 1");
         } catch (Exception e) {
             con.rollback();
             throw e;

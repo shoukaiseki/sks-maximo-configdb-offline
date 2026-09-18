@@ -830,12 +830,13 @@ public class ConfigDBUI {
     }
 
     private void showBackupTableDialog(java.util.List<String[]> tableData, String initLog) {
-        // 表格
-        String[] columns = {"原表名称", "备份表名称"};
-        Object[][] data = new Object[tableData.size()][2];
+        // 表格：序号、原表名称、备份表名称
+        String[] columns = {"序号", "原表名称", "备份表名称"};
+        Object[][] data = new Object[tableData.size()][3];
         for (int i = 0; i < tableData.size(); i++) {
-            data[i][0] = tableData.get(i)[0];
-            data[i][1] = tableData.get(i)[1];
+            data[i][0] = (i + 1);
+            data[i][1] = tableData.get(i)[0];
+            data[i][2] = tableData.get(i)[1];
         }
 
         javax.swing.table.DefaultTableModel model = new javax.swing.table.DefaultTableModel(data, columns) {
@@ -845,8 +846,10 @@ public class ConfigDBUI {
         table.setFont(new Font("Consolas", Font.PLAIN, 12));
         table.setRowHeight(22);
         table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-        table.getColumnModel().getColumn(0).setPreferredWidth(200);
-        table.getColumnModel().getColumn(1).setPreferredWidth(200);
+        table.getColumnModel().getColumn(0).setPreferredWidth(50);
+        table.getColumnModel().getColumn(0).setMaxWidth(60);
+        table.getColumnModel().getColumn(1).setPreferredWidth(180);
+        table.getColumnModel().getColumn(2).setPreferredWidth(180);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
         table.setRowSelectionAllowed(true);
 
@@ -957,7 +960,7 @@ public class ConfigDBUI {
             StringBuilder params = new StringBuilder();
             for (int i = 0; i < rows.length; i++) {
                 if (i > 0) params.append(",");
-                params.append(model.getValueAt(rows[i], 0)).append("|").append(model.getValueAt(rows[i], 1));
+                params.append(model.getValueAt(rows[i], 1)).append("|").append(model.getValueAt(rows[i], 2));
             }
             btnGenInsert.setEnabled(true);
             btnGenDrop.setEnabled(true);
@@ -971,7 +974,7 @@ public class ConfigDBUI {
             if (rows.length == 0) { appendLogFn.accept("!! 请先选择备份表行", COLOR_STDERR); return; }
             appendLogFn.accept(">> 生成 INSERT SQL...", COLOR_START);
             for (int r : rows) {
-                String orig = (String) model.getValueAt(r, 0);
+                String orig = (String) model.getValueAt(r, 1);
                 runAction.accept("sql-insert|--table=" + orig);
             }
         });
@@ -981,7 +984,7 @@ public class ConfigDBUI {
             if (rows.length == 0) { appendLogFn.accept("!! 请先选择备份表行", COLOR_STDERR); return; }
             appendLogFn.accept(">> 生成 DROP SQL...", COLOR_START);
             for (int r : rows) {
-                String orig = (String) model.getValueAt(r, 0);
+                String orig = (String) model.getValueAt(r, 1);
                 runAction.accept("sql-drop|--table=" + orig);
             }
         });
@@ -996,7 +999,7 @@ public class ConfigDBUI {
             if (confirm != JOptionPane.YES_OPTION) return;
             appendLogFn.accept(">> 删除备份表...", COLOR_START);
             for (int r : rows) {
-                String orig = (String) model.getValueAt(r, 0);
+                String orig = (String) model.getValueAt(r, 1);
                 runAction.accept("drop|--table=" + orig);
             }
         });
