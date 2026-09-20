@@ -861,6 +861,16 @@ public class ConfigDBUI {
         logPane.setForeground(new Color(212, 212, 212));
         StyledDocument logDoc = logPane.getStyledDocument();
 
+        // 帮助说明框（可选中复制）
+        JTextPane helpPane = new JTextPane();
+        helpPane.setEditable(false);
+        helpPane.setFont(new Font("Microsoft YaHei", Font.PLAIN, 13));
+        helpPane.setBackground(new Color(30, 30, 30));
+        helpPane.setForeground(new Color(212, 212, 212));
+        helpPane.setText(
+            "--BMXAA0353E - 现有的表未能从备份数据恢复。 必须在配置数据库之前恢复表数据。\n\n"
+            + "select TABLENAME from MAXTABLECFG where RESTOREDATA=1;\n");
+
         // 按钮
         JButton btnCount    = createDialogBtn("查询数据量", new Color(26, 115, 232));
         JButton btnGenInsert = createDialogBtn("插入原表SQL生成", new Color(52, 168, 83));
@@ -1018,9 +1028,15 @@ public class ConfigDBUI {
         JScrollPane tableScroll = new JScrollPane(table);
         tableScroll.setPreferredSize(new Dimension(380, 350));
         JScrollPane logScroll = new JScrollPane(logPane);
-        logScroll.setPreferredSize(new Dimension(380, 350));
+        JScrollPane helpScroll = new JScrollPane(helpPane);
 
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tableScroll, logScroll);
+        JTabbedPane rightTabs = new JTabbedPane();
+        rightTabs.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+        rightTabs.addTab("日志", logScroll);
+        rightTabs.addTab("帮助说明", helpScroll);
+        rightTabs.setPreferredSize(new Dimension(380, 350));
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, tableScroll, rightTabs);
         splitPane.setDividerLocation(380);
         splitPane.setResizeWeight(0.45);
 
@@ -1350,7 +1366,7 @@ public class ConfigDBUI {
                 if (btn.isEnabled()) btn.setBackground(bg);
             }
         });
-        btn.setEnabled(false);
+        btn.setEnabled(true);
         return btn;
     }
 
