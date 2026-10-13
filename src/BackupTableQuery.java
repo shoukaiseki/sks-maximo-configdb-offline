@@ -13,7 +13,8 @@
  *   --action=count --tables="T1,T2,..."  查询指定表的数据量
  *   --action=sql-insert table=T           生成 INSERT INTO 原表 SELECT * FROM 备份表
  *   --action=sql-drop table=T            生成 DROP TABLE 备份表
- *   --action=drop table=T                执行 DROP TABLE 备份表
+ *   --action=drop-new --tables="T1,T2"   批量删除：先校验备份表存在 -> DROP -> restoredata 置 0
+ *                                        （备份表不存在则无需 DROP，直接置 0）
  *   --sks-root=<path>                    指定根目录
  */
 
@@ -56,8 +57,8 @@ public class BackupTableQuery {
                 actionGenInsert(con, singleTable);
             } else if (action.equals("sql-drop")) {
                 actionGenDrop(con, singleTable);
-            } else if (action.equals("drop")) {
-                actionDrop(con, singleTable);
+            } else if (action.equals("drop-new")) {
+                actionDropNew(con, tables);
             }
         } catch (Exception e) {
             System.out.println("ERROR|" + e.getMessage());
@@ -201,29 +202,65 @@ public class BackupTableQuery {
         System.out.println("SQL|DROP|commit;");
     }
 
-    // ---- Action: 执行 DROP ----
-    private static void actionDrop(Connection con, String table) throws Exception {
-        if (table == null || table.isEmpty()) {
-            System.out.println("ERROR|--table 参数不能为空");
+    // ---- Action: 删除备份表（参照 DrpOldTabSet.execute -> ConfigureService.dropBackup -> DropBackup）----
+    // 对每个表：
+    //   1. 校验备份表存在（Util.getOldBackupTables(tbname) 单表 SQL + rowFound）
+    //   2. 存在: DROP TABLE 备份表
+    //   3. 更新 maxtablecfg 中对应表的 restoredata = 0（备份表不存在则无需 DROP，直接更新）
+    // 输出: DONE|tablename 表示该表处理成功
+    private static void actionDropNew(Connection con, String tablesStr) throws Exception {
+        if (tablesStr == null || tablesStr.isEmpty()) {
+            System.out.println("ERROR|--tables 参数不能为空");
             return;
         }
         int maxLen = getMaxNameLength(con);
-        String backup = getBackupTableName(table, maxLen);
+        String[] tables = tablesStr.split(",");
         con.setAutoCommit(false);
         try (Statement st = con.createStatement()) {
-            String dropSql = "DROP TABLE " + backup;
-            System.out.println("SQL|DROP|" + dropSql + ";");
-            st.execute(dropSql);
-            System.out.println("SQL|DROP|commit;");
-            st.execute("commit");
-            System.out.println("INFO|备份表 " + backup + " 已删除");
-            // 更新 restoredata = 1（INTEGER 类型）
-            String updateSql = "update maxtablecfg set restoredata = 1 where tablename = '" + table + "'";
-            System.out.println("SQL|UPDATE|" + updateSql + ";");
-            st.execute(updateSql);
-            System.out.println("SQL|UPDATE|commit;");
-            st.execute("commit");
-            System.out.println("INFO|maxtablecfg.restoredata 已更新为 1");
+            for (String t : tables) {
+                String tb = t.trim().toUpperCase();
+                if (tb.isEmpty()) continue;
+                String backup = getBackupTableName(tb, maxLen);
+
+                // 1. 校验备份表是否存在（参照 DropBackup.process: util.rowFound(util.getOldBackupTables(tbname))）
+                String chkSql = "select tabname from syscat.tables where tabschema = current schema "
+                    + "and tabname in (Select '" + backup + "' From maxtablecfg "
+                    + "where tablename = '" + tb + "' and restoredata != 1)";
+                System.out.println("SQL|CHECK|" + chkSql + ";");
+                boolean exists;
+                try (ResultSet rs = st.executeQuery(chkSql)) {
+                    exists = rs.next();
+                }
+                if (!exists) {
+                    System.out.println("INFO|" + tb + ": 备份表 " + backup + " 不存在，无需 DROP，直接更新 restoredata = 0");
+                    String updSql = "update maxtablecfg set restoredata = 0 where tablename = '" + tb + "'";
+                    System.out.println("SQL|UPDATE|" + updSql + ";");
+                    st.execute(updSql);
+                    System.out.println("SQL|UPDATE|commit;");
+                    st.execute("commit");
+                    System.out.println("INFO|" + tb + ": maxtablecfg.restoredata 已更新为 0");
+                    System.out.println("DONE|" + tb);
+                    continue;
+                }
+
+                // 2. 删除备份表
+                String dropSql = "DROP TABLE " + backup;
+                System.out.println("SQL|DROP|" + dropSql + ";");
+                st.execute(dropSql);
+                System.out.println("SQL|DROP|commit;");
+                st.execute("commit");
+                System.out.println("INFO|" + backup + " 已删除");
+
+                // 3. 更新 maxtablecfg.restoredata = 0
+                String updSql = "update maxtablecfg set restoredata = 0 where tablename = '" + tb + "'";
+                System.out.println("SQL|UPDATE|" + updSql + ";");
+                st.execute(updSql);
+                System.out.println("SQL|UPDATE|commit;");
+                st.execute("commit");
+                System.out.println("INFO|" + tb + ": maxtablecfg.restoredata 已更新为 0");
+
+                System.out.println("DONE|" + tb);
+            }
         } catch (Exception e) {
             con.rollback();
             throw e;

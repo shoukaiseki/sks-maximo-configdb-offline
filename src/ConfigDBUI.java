@@ -765,6 +765,10 @@ public class ConfigDBUI {
     // 备份表管理
     // ============================================================
     private void runBackupTableList() {
+        runBackupTableQuery();
+    }
+
+    private void runBackupTableQuery() {
         appendLog(">> 查询备份表列表", COLOR_START, 1);
         infoLabel.setText("正在查询备份表...");
 
@@ -830,17 +834,19 @@ public class ConfigDBUI {
     }
 
     private void showBackupTableDialog(java.util.List<String[]> tableData, String initLog) {
-        // 表格：序号、原表名称、备份表名称
-        String[] columns = {"序号", "原表名称", "备份表名称"};
-        Object[][] data = new Object[tableData.size()][3];
+        // 表格：选择（复选框）、序号、原表名称、备份表名称
+        String[] columns = {"选择", "序号", "原表名称", "备份表名称"};
+        Object[][] data = new Object[tableData.size()][4];
         for (int i = 0; i < tableData.size(); i++) {
-            data[i][0] = (i + 1);
-            data[i][1] = tableData.get(i)[0];
-            data[i][2] = tableData.get(i)[1];
+            data[i][0] = Boolean.FALSE;
+            data[i][1] = (i + 1);
+            data[i][2] = tableData.get(i)[0];
+            data[i][3] = tableData.get(i)[1];
         }
 
         javax.swing.table.DefaultTableModel model = new javax.swing.table.DefaultTableModel(data, columns) {
-            @Override public boolean isCellEditable(int r, int c) { return false; }
+            @Override public boolean isCellEditable(int r, int c) { return c == 0; }
+            @Override public Class<?> getColumnClass(int c) { return c == 0 ? Boolean.class : Object.class; }
         };
         JTable table = new JTable(model);
         table.setFont(new Font("Consolas", Font.PLAIN, 12));
@@ -848,8 +854,10 @@ public class ConfigDBUI {
         table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         table.getColumnModel().getColumn(0).setPreferredWidth(50);
         table.getColumnModel().getColumn(0).setMaxWidth(60);
-        table.getColumnModel().getColumn(1).setPreferredWidth(180);
+        table.getColumnModel().getColumn(1).setPreferredWidth(50);
+        table.getColumnModel().getColumn(1).setMaxWidth(60);
         table.getColumnModel().getColumn(2).setPreferredWidth(180);
+        table.getColumnModel().getColumn(3).setPreferredWidth(180);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
         table.setRowSelectionAllowed(true);
 
@@ -869,9 +877,12 @@ public class ConfigDBUI {
         helpPane.setForeground(new Color(212, 212, 212));
         helpPane.setText(
             "--BMXAA0353E - 现有的表未能从备份数据恢复。 必须在配置数据库之前恢复表数据。\n\n"
-            + "select TABLENAME from MAXTABLECFG where RESTOREDATA=1;\n");
+            + "select TABLENAME from MAXTABLECFG where RESTOREDATA=1;\n\n"
+            + "删除流程: 逐表校验备份表存在 -> DROP TABLE 备份表 -> 更新 maxtablecfg.restoredata = 0\n"
+            + "(备份表不存在时无需 DROP，直接更新 restoredata = 0)\n");
 
         // 按钮
+        JButton btnSelectAll = createDialogBtn("全选", new Color(95, 99, 104));
         JButton btnCount    = createDialogBtn("查询数据量", new Color(26, 115, 232));
         JButton btnGenInsert = createDialogBtn("插入原表SQL生成", new Color(52, 168, 83));
         JButton btnGenDrop  = createDialogBtn("删除备份表SQL生成", new Color(200, 80, 60));
@@ -960,6 +971,15 @@ public class ConfigDBUI {
         };
 
         // ---- 按钮事件 ----
+        btnSelectAll.addActionListener(e -> {
+            boolean anyUnchecked = false;
+            for (int i = 0; i < model.getRowCount(); i++) {
+                if (!Boolean.TRUE.equals(model.getValueAt(i, 0))) { anyUnchecked = true; break; }
+            }
+            boolean target = anyUnchecked;
+            for (int i = 0; i < model.getRowCount(); i++) model.setValueAt(target, i, 0);
+        });
+
         btnCount.addActionListener(e -> {
             int[] rows = table.getSelectedRows();
             if (rows.length == 0) {
@@ -970,7 +990,7 @@ public class ConfigDBUI {
             StringBuilder params = new StringBuilder();
             for (int i = 0; i < rows.length; i++) {
                 if (i > 0) params.append(",");
-                params.append(model.getValueAt(rows[i], 1)).append("|").append(model.getValueAt(rows[i], 2));
+                params.append(model.getValueAt(rows[i], 2)).append("|").append(model.getValueAt(rows[i], 3));
             }
             btnGenInsert.setEnabled(true);
             btnGenDrop.setEnabled(true);
@@ -984,7 +1004,7 @@ public class ConfigDBUI {
             if (rows.length == 0) { appendLogFn.accept("!! 请先选择备份表行", COLOR_STDERR); return; }
             appendLogFn.accept(">> 生成 INSERT SQL...", COLOR_START);
             for (int r : rows) {
-                String orig = (String) model.getValueAt(r, 1);
+                String orig = (String) model.getValueAt(r, 2);
                 runAction.accept("sql-insert|--table=" + orig);
             }
         });
@@ -994,30 +1014,94 @@ public class ConfigDBUI {
             if (rows.length == 0) { appendLogFn.accept("!! 请先选择备份表行", COLOR_STDERR); return; }
             appendLogFn.accept(">> 生成 DROP SQL...", COLOR_START);
             for (int r : rows) {
-                String orig = (String) model.getValueAt(r, 1);
+                String orig = (String) model.getValueAt(r, 2);
                 runAction.accept("sql-drop|--table=" + orig);
             }
         });
 
         btnDrop.addActionListener(e -> {
-            int[] rows = table.getSelectedRows();
-            if (rows.length == 0) { appendLogFn.accept("!! 请先选择备份表行", COLOR_STDERR); return; }
-            // 验证：备份表数据量不为0且原表数据量为0 -> 不可删除
+            java.util.List<String> names = new java.util.ArrayList<>();
+            for (int i = 0; i < model.getRowCount(); i++) {
+                if (Boolean.TRUE.equals(model.getValueAt(i, 0))) {
+                    names.add((String) model.getValueAt(i, 2));
+                }
+            }
+            if (names.isEmpty()) { appendLogFn.accept("!! 请先勾选要删除的备份表", COLOR_STDERR); return; }
             int confirm = JOptionPane.showConfirmDialog(dialog,
-                "确定要删除选中的 " + rows.length + " 个备份表吗？",
+                "确定要删除选中的 " + names.size() + " 个备份表吗？\n"
+                + "备份表存在则 DROP 后更新 maxtablecfg.restoredata = 0\n"
+                + "备份表不存在则直接更新 maxtablecfg.restoredata = 0",
                 "确认删除", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
             if (confirm != JOptionPane.YES_OPTION) return;
-            appendLogFn.accept(">> 删除备份表...", COLOR_START);
-            for (int r : rows) {
-                String orig = (String) model.getValueAt(r, 1);
-                runAction.accept("drop|--table=" + orig);
-            }
+
+            btnDrop.setEnabled(false);
+            appendLogFn.accept(">> 删除备份表 (" + names.size() + " 个)...", COLOR_START);
+            new Thread(() -> {
+                try {
+                    StringBuilder cp = new StringBuilder();
+                    cp.append(classPath);
+                    cp.append(File.pathSeparator).append(sksRoot.getAbsolutePath()).append(File.pathSeparator).append("bin");
+
+                    ArrayList<String> cmdList = new ArrayList<>();
+                    cmdList.add(javaCmd);
+                    cmdList.add("-Dfile.encoding=UTF-8");
+                    cmdList.add("-cp");
+                    cmdList.add(cp.toString());
+                    cmdList.add("BackupTableQuery");
+                    cmdList.add("--sks-root=" + sksRoot.getAbsolutePath());
+                    cmdList.add("--action=drop-new");
+                    cmdList.add("--tables=" + String.join(",", names));
+
+                    ProcessBuilder pb = new ProcessBuilder(cmdList);
+                    pb.directory(sksRoot);
+                    pb.redirectErrorStream(true);
+                    Process p = pb.start();
+
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"), 8192)) {
+                        String l; while ((l = r.readLine()) != null) {
+                            final String ll = l;
+                            SwingUtilities.invokeLater(() -> {
+                                if (ll.startsWith("DONE|")) {
+                                    String tb = ll.substring(5).trim();
+                                    appendLogFn.accept("  " + tb + " 处理完成", COLOR_SUCCESS);
+                                    // 从表格中移除该行
+                                    for (int i = model.getRowCount() - 1; i >= 0; i--) {
+                                        if (tb.equalsIgnoreCase(String.valueOf(model.getValueAt(i, 2)))) {
+                                            model.removeRow(i);
+                                        }
+                                    }
+                                } else if (ll.startsWith("SQL|")) {
+                                    appendLogFn.accept("  " + ll, COLOR_SUCCESS);
+                                } else if (ll.startsWith("INFO|")) {
+                                    appendLogFn.accept("  " + ll.substring(5), COLOR_INFO);
+                                } else if (ll.startsWith("ERROR|")) {
+                                    appendLogFn.accept("  " + ll.substring(6), COLOR_STDERR);
+                                } else {
+                                    appendLogFn.accept("  " + ll, COLOR_STDOUT);
+                                }
+                            });
+                        }
+                    }
+                    int ec = p.waitFor();
+                    final int exitCode = ec;
+                    SwingUtilities.invokeLater(() -> {
+                        btnDrop.setEnabled(true);
+                        appendLogFn.accept("-- 删除完毕，退出码: " + exitCode, exitCode == 0 ? COLOR_SUCCESS : COLOR_STDERR);
+                    });
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        btnDrop.setEnabled(true);
+                        appendLogFn.accept("!! 删除出错: " + ex.getMessage(), COLOR_STDERR);
+                    });
+                }
+            }, "backup-drop").start();
         });
 
         btnClose.addActionListener(e -> dialog.dispose());
 
         // ---- 布局 ----
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        btnPanel.add(btnSelectAll);
         btnPanel.add(btnCount);
         btnPanel.add(btnGenInsert);
         btnPanel.add(btnGenDrop);
