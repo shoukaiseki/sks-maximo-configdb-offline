@@ -27,6 +27,8 @@ sks:
         #mxe.security.old.crypto.key: "tXwBJJjEfGwsMpmLJTKfwPki"
         #mxe.security.cryptox.key: "WJlJEUDzAreXkkaGCTluiufM"
         #mxe.security.old.cryptox.key: "WJlJEUDzAreXkkaGCTluiufM"
+        #验证全库密码时使用,判断是否开启 APIKEYTOKEN.APIKEY有效性验证
+        #mxe.secureapikey: "1"
   #验证全库密码是否正常
   validate-cryptokey:
     tableid-map:

@@ -253,10 +253,15 @@ public class ValidateCryptoKeyTool {
             failTotal += r[1];
         }
 
-        // APIKEYTOKEN.APIKEY（base64 文本, maxtype=ALN; 参照原版 validateKey 的 secureapikey 分支, 此处恒验证）
-        int[] rApi = validateField(con, idMap, "APIKEYTOKEN", "APIKEY", true, false);
-        okTotal += rApi[0];
-        failTotal += rApi[1];
+        // mxe.secureapikey=1 时验证 APIKEYTOKEN.APIKEY（base64 文本, maxtype=ALN; 属性由 app.yml 写入 maximo.properties, 参照原版 validateKey）
+        String secureApiKey = dbProps.getProperty("mxe.secureapikey");
+        if (secureApiKey != null && "1".equals(secureApiKey.trim())) {
+            int[] rApi = validateField(con, idMap, "APIKEYTOKEN", "APIKEY", true, false);
+            okTotal += rApi[0];
+            failTotal += rApi[1];
+        } else {
+            System.out.println("INFO|mxe.secureapikey != 1, 跳过 APIKEYTOKEN.APIKEY 验证");
+        }
 
         System.out.println("DONE|" + okTotal + "|" + failTotal);
     }

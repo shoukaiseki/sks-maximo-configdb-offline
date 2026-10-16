@@ -1607,6 +1607,21 @@ public class ConfigDBUI {
         btnPanel.add(Box.createHorizontalGlue());
         btnPanel.add(btnClose);
 
+        // mxe.secureapikey=1 时才显示 重置APIKEY 按钮（与验证逻辑一致, 属性读取 maximo.properties）
+        boolean secureApikeyOn = false;
+        try {
+            java.util.Properties sp = new java.util.Properties();
+            File propFile = new File(sksRoot, "maximo/properties/maximo.properties");
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(propFile)) {
+                sp.load(fis);
+            }
+            String v = sp.getProperty("mxe.secureapikey");
+            secureApikeyOn = v != null && "1".equals(v.trim());
+        } catch (Exception ignored) {}
+        if (!secureApikeyOn) {
+            btnResetApikey.setVisible(false);
+        }
+
         JPanel panel = new JPanel(new BorderLayout(0, 8));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         panel.add(btnPanel, BorderLayout.NORTH);
@@ -1679,6 +1694,72 @@ public class ConfigDBUI {
     private void setClipboardText(String s) {
         java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
             .setContents(new java.awt.datatransfer.StringSelection(s), null);
+    }
+
+    // ============================================================
+    // FlowLayout 扩展: preferred 高度按容器实际宽度动态换行计算,
+    // 使工具栏按钮在窗口宽度不足时自动折成多行显示(而非被裁剪)
+    // ============================================================
+    private static class WrapLayout extends FlowLayout {
+        WrapLayout(int align, int hgap, int vgap) {
+            super(align, hgap, vgap);
+        }
+
+        @Override
+        public Dimension preferredLayoutSize(Container target) {
+            return layoutSize(target, true);
+        }
+
+        @Override
+        public Dimension minimumLayoutSize(Container target) {
+            Dimension minimum = layoutSize(target, false);
+            minimum.width -= (getHgap() * 2);
+            return minimum;
+        }
+
+        @Override
+        public void layoutContainer(Container target) {
+            Dimension size = preferredLayoutSize(target);
+            if (size.equals(target.getPreferredSize())) {
+                super.layoutContainer(target);
+            } else {
+                // 行数变化时更新 preferred 高度, 触发父容器重新布局
+                target.setPreferredSize(size);
+            }
+        }
+
+        private Dimension layoutSize(Container target, boolean preferred) {
+            synchronized (target.getTreeLock()) {
+                int targetWidth = target.getSize().width;
+                if (targetWidth == 0) {
+                    targetWidth = Integer.MAX_VALUE;
+                }
+                Insets insets = target.getInsets();
+                int maxWidth = targetWidth - (insets.left + insets.right + getHgap() * 2);
+
+                Dimension dim = new Dimension(0, 0);
+                int rowWidth = 0;
+                int rowHeight = 0;
+                for (int i = 0, n = target.getComponentCount(); i < n; i++) {
+                    Component m = target.getComponent(i);
+                    if (!m.isVisible()) continue;
+                    Dimension d = preferred ? m.getPreferredSize() : m.getMinimumSize();
+                    if (rowWidth > 0 && rowWidth + getHgap() + d.width > maxWidth) {
+                        dim.width = Math.max(dim.width, rowWidth);
+                        dim.height += rowHeight + getVgap();
+                        rowWidth = 0;
+                        rowHeight = 0;
+                    }
+                    rowWidth += (rowWidth > 0 ? getHgap() : 0) + d.width;
+                    rowHeight = Math.max(rowHeight, d.height);
+                }
+                dim.width = Math.max(dim.width, rowWidth);
+                dim.height += rowHeight;
+                dim.width += insets.left + insets.right + getHgap() * 2;
+                dim.height += insets.top + insets.bottom + getVgap() * 2;
+                return dim;
+            }
+        }
     }
 
     // ============================================================
@@ -2284,8 +2365,8 @@ public class ConfigDBUI {
                 }
             }
         });
-        frame.setSize(1000, 700);
-        frame.setMinimumSize(new Dimension(700, 500));
+        frame.setSize(1200, 700);
+        frame.setMinimumSize(new Dimension(1000, 500));
         frame.setLocationRelativeTo(null);
 
         JPanel mainPanel = new JPanel(new BorderLayout(0, 8));
@@ -2374,7 +2455,7 @@ public class ConfigDBUI {
         btnShowUsers = createButton("查看用户", new Color(60, 150, 190), e -> runUserList());
         btnValidateCrypto = createButton("验证全库密码", new Color(120, 90, 170), e -> runValidateCryptoKey());
 
-        JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
+        JPanel row2 = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 6));
         row2.setBackground(Color.WHITE);
         row2.add(btnClearSession);
         row2.add(btnSetConfiguring);

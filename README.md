@@ -75,6 +75,38 @@ copy config\app-example.yml config\app.yml # Windows
 
 > `app.yml` 包含数据库密码等敏感信息，已被 `.gitignore` 忽略，不会提交到仓库。
 
+## 功能说明
+
+- **ConfigDB / RestoreFromBackup**：子进程方式运行 Maximo 配置工具，日志前缀着色，支持停止与调试模式
+- **环境切换**：右上角切换 `app.yml` 中的环境，合并属性后写入 `maximo/properties/maximo.properties`
+- **数据库快速操作**：清除 SERVERSESSION、CONFIGURING=0、CONFIRMLABTRANS=0、ADMINRESTART=OFF、查询变量
+- **查看用户**：查询 MAXUSER 信息，表格内重置密码（ResetPasswords -i 方式）
+- **备份表管理**：查询备份表数据量、生成统计/INSERT/DROP SQL，支持勾选批量删除（备份表存在则 DROP 后更新 `maxtablecfg.restoredata=0`，不存在则直接置 0）
+- **验证全库密码**：按 `psdi.tools.ValidateCryptoKey` 逻辑验证全库加密字段（CRYPTO / CRYPTOX），成功/失败分类显示，支持全选、表名多选过滤、单元格复制；「重置密码」「重置APIKEY」按勾选行加密生成 update SQL（仅生成，不执行）
+
+### 验证全库密码配置（app.yml）
+
+```yaml
+sks:
+  # 加密字段主键映射: 存在则使用配置, 不存在则默认 表名+ID (如 PERSON -> PERSONUID)
+  validate-cryptokey:
+    tableid-map:
+      PERSON: "PERSONUID"
+
+  maximo-properties:
+    environments:
+      dev:
+        mxe.security.crypto.key: "..."      # CRYPTO 字段密钥
+        mxe.security.cryptox.key: "..."     # CRYPTOX 字段密钥 (如 MAXUSER.PASSWORD)
+        #mxe.secureapikey: "1"              # =1 时验证 APIKEYTOKEN.APIKEY, 并显示 重置APIKEY 按钮
+```
+
+验证范围说明：
+
+- `maxattribute` 中 `persistent=1` 且 maxtype 为 `CRYPTO` / `CRYPTOX` 的字段（自动排除视图、审计表、DUMMY_TABLE 占位对象）
+- `mxe.secureapikey=1` 时额外验证 `APIKEYTOKEN.APIKEY`（base64 文本密文）
+- 上述属性随环境切换一并写入 `maximo.properties`，修改配置后需重新切换环境生效
+
 ## 快速开始
 
 ### 1. 编译 Java 源码
