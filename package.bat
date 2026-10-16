@@ -29,7 +29,7 @@ if not exist "!CSC_CMD!" set "CSC_CMD="
 echo.
 echo === 1. Compile Java source ===
 if not exist bin mkdir bin
-"%JAVAC_CMD%" -encoding UTF-8 -cp "lib\snakeyaml-2.5.jar" -d "bin" "src\ConfigDBUI.java"
+"%JAVAC_CMD%" -encoding UTF-8 -cp "lib\snakeyaml-2.5.jar" -d "bin" "src\ConfigDBUI.java" "src\BackupTableQuery.java" "src\ValidateCryptoKeyTool.java"
 if !errorlevel! neq 0 (
   echo Compile FAILED!
   exit /b 1

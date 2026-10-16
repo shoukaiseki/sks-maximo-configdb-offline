@@ -27,3 +27,9 @@ sks:
         #mxe.security.old.crypto.key: "tXwBJJjEfGwsMpmLJTKfwPki"
         #mxe.security.cryptox.key: "WJlJEUDzAreXkkaGCTluiufM"
         #mxe.security.old.cryptox.key: "WJlJEUDzAreXkkaGCTluiufM"
+  #验证全库密码是否正常
+  validate-cryptokey:
+    tableid-map:
+      #定义表的主键,在成功/失败时显示该字段名称
+      MAXUSER: "USERID"
+      PERSON: "PERSONUID"

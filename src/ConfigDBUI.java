@@ -68,6 +68,7 @@ public class ConfigDBUI {
     private JButton btnShowJars;
     private JButton btnLogLevel;
     private JButton btnShowUsers;
+    private JButton btnValidateCrypto;
     private JLabel lineCountLabel;
     private JLabel taskStatusLabel;
 
@@ -89,6 +90,8 @@ public class ConfigDBUI {
     private String defaultEnv;
     private Map<String, String> globalProps = new LinkedHashMap<>();
     private Map<String, EnvConfig> environments = new LinkedHashMap<>();
+    // 验证全库密码: 表->主键列映射（sks.validate-cryptokey.tableid-map）
+    private Map<String, String> cryptoTableIdMap = new LinkedHashMap<>();
     private JButton btnSwitchEnv;
 
     // 调试模式
@@ -379,6 +382,24 @@ public class ConfigDBUI {
                         }
                     }
                     environments.put(envName, ec);
+                }
+            }
+
+            // 读取验证全库密码的主键映射（sks.validate-cryptokey.tableid-map）
+            cryptoTableIdMap.clear();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> vc = (Map<String, Object>) mp.get("validate-cryptokey");
+            if (vc != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> tm = (Map<String, Object>) vc.get("tableid-map");
+                if (tm != null) {
+                    for (Map.Entry<String, Object> e : tm.entrySet()) {
+                        if (e.getValue() == null) continue;
+                        cryptoTableIdMap.put(e.getKey().trim().toUpperCase(), e.getValue().toString().trim());
+                    }
+                    if (!cryptoTableIdMap.isEmpty()) {
+                        appendLog("[INIT] 加密字段主键映射: " + cryptoTableIdMap.size() + " 个", COLOR_INFO);
+                    }
                 }
             }
 
@@ -1147,6 +1168,520 @@ public class ConfigDBUI {
     }
 
     // ============================================================
+    // 验证全库密码 — 参照 psdi.tools.ValidateCryptoKey(-l -e -k) 验证逻辑
+    //   1. 查出所有 CRYPTO 字段
+    //   2. 按 UPGRADEALGORITHM 选择 AES(新)/DESede(旧) 算法, 用 mxe.security.crypto.key 构建 MXCipher 同款加解密器
+    //   3. 逐行 解密+回加密 round-trip 验证, 成功/失败分类显示
+    // ============================================================
+    private void runValidateCryptoKey() {
+        showValidateCryptoKeyDialog();
+    }
+
+    private void showValidateCryptoKeyDialog() {
+        // 成功表: 表名 / 字段名 / 主键 / 字段内容(字节码)
+        javax.swing.table.DefaultTableModel okModel = new javax.swing.table.DefaultTableModel(
+            new Object[]{"表名", "字段名", "主键", "字段内容(字节码)"}, 0);
+        JTable okTable = new JTable(okModel);
+        okTable.setFont(new Font("Consolas", Font.PLAIN, 12));
+        okTable.setRowHeight(22);
+        okTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        okTable.getColumnModel().getColumn(0).setPreferredWidth(180);
+        okTable.getColumnModel().getColumn(1).setPreferredWidth(180);
+        okTable.getColumnModel().getColumn(2).setPreferredWidth(160);
+        okTable.getColumnModel().getColumn(3).setPreferredWidth(400);
+        addTableCopySupport(okTable);
+
+        // 失败表: 勾选列 + 表名/字段名/主键/字段内容/错误信息
+        javax.swing.table.DefaultTableModel failModel = new javax.swing.table.DefaultTableModel(
+            new Object[]{"选择", "表名", "字段名", "主键", "字段内容(字节码)", "错误信息"}, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return c == 0; }
+            @Override public Class<?> getColumnClass(int c) { return c == 0 ? Boolean.class : Object.class; }
+        };
+        JTable failTable = new JTable(failModel);
+        failTable.setFont(new Font("Consolas", Font.PLAIN, 12));
+        failTable.setRowHeight(22);
+        failTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        failTable.getColumnModel().getColumn(0).setPreferredWidth(50);
+        failTable.getColumnModel().getColumn(1).setPreferredWidth(160);
+        failTable.getColumnModel().getColumn(2).setPreferredWidth(160);
+        failTable.getColumnModel().getColumn(3).setPreferredWidth(120);
+        failTable.getColumnModel().getColumn(4).setPreferredWidth(300);
+        failTable.getColumnModel().getColumn(5).setPreferredWidth(260);
+        // 表名过滤用行排序器（过滤只作用于视图, 缓存数据不变）
+        javax.swing.table.TableRowSorter<javax.swing.table.DefaultTableModel> failSorter =
+            new javax.swing.table.TableRowSorter<>(failModel);
+        failTable.setRowSorter(failSorter);
+        final java.util.Set<String> failFilterTables = new java.util.LinkedHashSet<>();
+        addTableCopySupport(failTable);
+
+        // 日志框
+        JTextPane logPane = new JTextPane();
+        logPane.setEditable(false);
+        logPane.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+        logPane.setBackground(new Color(30, 30, 30));
+        logPane.setForeground(new Color(212, 212, 212));
+        StyledDocument logDoc = logPane.getStyledDocument();
+
+        // 分类标签页
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.setFont(new Font("Microsoft YaHei", Font.PLAIN, 12));
+        tabs.addTab("成功(0)", new JScrollPane(okTable));
+        tabs.addTab("失败(0)", new JScrollPane(failTable));
+        tabs.addTab("日志", new JScrollPane(logPane));
+
+        // 按钮
+        JButton btnValidate = createDialogBtn("验证", new Color(26, 115, 232));
+        JButton btnSelectAllFail = createDialogBtn("全选", new Color(95, 99, 104));
+        JButton btnFilterTable = createDialogBtn("表名过滤", new Color(120, 90, 170));
+        JButton btnResetPwd = createDialogBtn("重置密码", new Color(52, 168, 83));
+        JButton btnResetApikey = createDialogBtn("重置APIKEY", new Color(200, 130, 40));
+        JButton btnClose    = createDialogBtn("关闭", new Color(100, 100, 100));
+
+        // 非模态对话框
+        JDialog dialog = new JDialog(frame, "验证全库密码", false);
+
+        // ---- helper: 追加日志 ----
+        java.util.function.BiConsumer<String, Color> appendLogFn = (text, color) -> {
+            StyleContext sc = StyleContext.getDefaultStyleContext();
+            AttributeSet attr = sc.addAttribute(SimpleAttributeSet.EMPTY, StyleConstants.Foreground, color);
+            try {
+                logDoc.insertString(logDoc.getLength(), text + "\n", attr);
+                logPane.setCaretPosition(logDoc.getLength());
+            } catch (BadLocationException ignored) {}
+        };
+
+        btnValidate.addActionListener(e -> {
+            okModel.setRowCount(0);
+            failModel.setRowCount(0);
+            try { logDoc.remove(0, logDoc.getLength()); } catch (BadLocationException ignored) {}
+            tabs.setTitleAt(0, "成功(0)");
+            tabs.setTitleAt(1, "失败(0)");
+
+            btnValidate.setEnabled(false);
+            btnResetPwd.setEnabled(false);
+            btnResetApikey.setEnabled(false);
+            tabs.setSelectedIndex(2); // 切到日志看进度
+            appendLogFn.accept(">> 验证全库密码...", COLOR_START);
+
+            final int[] okCount = {0};
+            final int[] failCount = {0};
+            new Thread(() -> {
+                try {
+                    StringBuilder cp = new StringBuilder();
+                    cp.append(classPath);
+                    cp.append(File.pathSeparator).append(sksRoot.getAbsolutePath()).append(File.pathSeparator).append("bin");
+
+                    ArrayList<String> cmdList = new ArrayList<>();
+                    cmdList.add(javaCmd);
+                    cmdList.add("-Dfile.encoding=UTF-8");
+                    cmdList.add("-cp");
+                    cmdList.add(cp.toString());
+                    cmdList.add("ValidateCryptoKeyTool");
+                    cmdList.add("--sks-root=" + sksRoot.getAbsolutePath());
+                    if (!cryptoTableIdMap.isEmpty()) {
+                        StringBuilder pm = new StringBuilder();
+                        for (Map.Entry<String, String> en : cryptoTableIdMap.entrySet()) {
+                            if (pm.length() > 0) pm.append(",");
+                            pm.append(en.getKey()).append(":").append(en.getValue());
+                        }
+                        cmdList.add("--pkmap=" + pm);
+                    }
+
+                    ProcessBuilder pb = new ProcessBuilder(cmdList);
+                    pb.directory(sksRoot);
+                    pb.redirectErrorStream(true);
+                    Process p = pb.start();
+
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), "UTF-8"), 8192)) {
+                        String l; while ((l = r.readLine()) != null) {
+                            final String ll = l;
+                            SwingUtilities.invokeLater(() -> {
+                                if (ll.startsWith("OK|")) {
+                                    String[] s = ll.split("\\|", 5);
+                                    if (s.length >= 5) {
+                                        okModel.addRow(new Object[]{s[1], s[2], s[3], s[4]});
+                                        okCount[0]++;
+                                        tabs.setTitleAt(0, "成功(" + okCount[0] + ")");
+                                    }
+                                } else if (ll.startsWith("FAIL|")) {
+                                    String[] s = ll.split("\\|", 6);
+                                    if (s.length >= 6) {
+                                        failModel.addRow(new Object[]{Boolean.FALSE, s[1], s[2], s[3], s[4], s[5]});
+                                        failCount[0]++;
+                                        tabs.setTitleAt(1, "失败(" + failCount[0] + ")");
+                                    }
+                                } else if (ll.startsWith("SQL|")) {
+                                    appendLogFn.accept("  " + ll, COLOR_SUCCESS);
+                                } else if (ll.startsWith("INFO|")) {
+                                    appendLogFn.accept("  " + ll.substring(5), COLOR_INFO);
+                                } else if (ll.startsWith("ERROR|")) {
+                                    appendLogFn.accept("  " + ll.substring(6), COLOR_STDERR);
+                                } else if (ll.startsWith("STAT|")) {
+                                    appendLogFn.accept("  " + ll.substring(5), COLOR_INFO);
+                                } else if (ll.startsWith("DONE|")) {
+                                    String[] s = ll.split("\\|", 3);
+                                    if (s.length >= 3) {
+                                        appendLogFn.accept("-- 验证完毕: 成功 " + s[1] + " 条, 失败 " + s[2] + " 条",
+                                            "0".equals(s[2]) ? COLOR_SUCCESS : COLOR_STDERR);
+                                    }
+                                } else {
+                                    appendLogFn.accept("  " + ll, COLOR_STDOUT);
+                                }
+                            });
+                        }
+                    }
+                    int ec = p.waitFor();
+                    final int exitCode = ec;
+                    SwingUtilities.invokeLater(() -> {
+                        btnValidate.setEnabled(true);
+                        btnResetPwd.setEnabled(true);
+                        btnResetApikey.setEnabled(true);
+                        if (exitCode != 0) {
+                            appendLogFn.accept("-- 验证异常，退出码: " + exitCode, COLOR_STDERR);
+                        }
+                    });
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        btnValidate.setEnabled(true);
+                        btnResetPwd.setEnabled(true);
+                        btnResetApikey.setEnabled(true);
+                        appendLogFn.accept("!! 验证出错: " + ex.getMessage(), COLOR_STDERR);
+                    });
+                }
+            }, "validate-cryptokey").start();
+        });
+
+        // ---- 按钮事件 ----
+        // 全选: 作用于当前过滤后可见的行（切换式: 有未选则全选, 已全选则取消全选）
+        btnSelectAllFail.addActionListener(e -> {
+            boolean anyUnchecked = false;
+            for (int v = 0; v < failTable.getRowCount(); v++) {
+                if (!Boolean.TRUE.equals(failModel.getValueAt(failTable.convertRowIndexToModel(v), 0))) { anyUnchecked = true; break; }
+            }
+            boolean target = anyUnchecked;
+            for (int v = 0; v < failTable.getRowCount(); v++) {
+                failModel.setValueAt(target, failTable.convertRowIndexToModel(v), 0);
+            }
+        });
+
+        // 表名过滤: 在缓存数据中按表名多选过滤（只影响视图, 不重新查询）
+        btnFilterTable.addActionListener(e -> {
+            java.util.TreeSet<String> names = new java.util.TreeSet<>();
+            for (int i = 0; i < failModel.getRowCount(); i++) {
+                names.add(String.valueOf(failModel.getValueAt(i, 1)));
+            }
+            if (names.isEmpty()) {
+                appendLogFn.accept("!! 失败列表为空, 无表名可过滤", COLOR_STDERR);
+                return;
+            }
+            javax.swing.JList<String> list = new javax.swing.JList<>(names.toArray(new String[0]));
+            // 保留当前过滤状态
+            if (!failFilterTables.isEmpty()) {
+                java.util.List<String> arr = new ArrayList<>(names);
+                int[] sel = arr.stream().filter(failFilterTables::contains).mapToInt(arr::indexOf).toArray();
+                if (sel.length > 0) list.setSelectedIndices(sel);
+            }
+            JScrollPane sp = new JScrollPane(list);
+            sp.setPreferredSize(new Dimension(260, 320));
+            int rc = JOptionPane.showConfirmDialog(dialog, sp,
+                "表名过滤(可多选; 不选直接确定 = 清除过滤)", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            if (rc != JOptionPane.OK_OPTION) return;
+            failFilterTables.clear();
+            failFilterTables.addAll(list.getSelectedValuesList());
+            if (failFilterTables.isEmpty()) {
+                failSorter.setRowFilter(null);
+                appendLogFn.accept(">> 已清除表名过滤, 显示全部 " + failModel.getRowCount() + " 行", COLOR_INFO);
+            } else {
+                failSorter.setRowFilter(new javax.swing.RowFilter<javax.swing.table.DefaultTableModel, Integer>() {
+                    @Override public boolean include(Entry<? extends javax.swing.table.DefaultTableModel, ? extends Integer> entry) {
+                        return failFilterTables.contains(entry.getStringValue(1));
+                    }
+                });
+                appendLogFn.accept(">> 表名过滤: " + String.join(", ", failFilterTables)
+                    + " (" + failTable.getRowCount() + "/" + failModel.getRowCount() + " 行)", COLOR_INFO);
+            }
+        });
+
+        // 重置密码: 勾选行 -> 按表.字段分组并收集主键值 -> 输入明文密码 -> 子进程按字段类型加密 -> 生成带 where 的 update（仅生成, 不执行）
+        btnResetPwd.addActionListener(e -> {
+            // key: TABLE.COLUMN, value: 该字段勾选行的主键值列表
+            java.util.LinkedHashMap<String, java.util.List<String>> picked = new java.util.LinkedHashMap<>();
+            for (int i = 0; i < failModel.getRowCount(); i++) {
+                if (Boolean.TRUE.equals(failModel.getValueAt(i, 0))) {
+                    String fkey = failModel.getValueAt(i, 1) + "." + failModel.getValueAt(i, 2);
+                    java.util.List<String> pks = picked.computeIfAbsent(fkey, k -> new ArrayList<>());
+                    pks.add(String.valueOf(failModel.getValueAt(i, 3)));
+                }
+            }
+            if (picked.isEmpty()) {
+                appendLogFn.accept("!! 请先在\"失败\"列表勾选要重置密码的行", COLOR_STDERR);
+                tabs.setSelectedIndex(1);
+                return;
+            }
+            // 密码输入框
+            javax.swing.JPasswordField pwdField = new javax.swing.JPasswordField(22);
+            JPanel pwdPanel = new JPanel(new java.awt.GridLayout(2, 1, 0, 4));
+            pwdPanel.add(new JLabel("输入新密码（勾选字段的整表数据都将重置为该密码）:"));
+            pwdPanel.add(pwdField);
+            int rc = JOptionPane.showConfirmDialog(dialog, pwdPanel,
+                "重置密码 - " + picked.size() + " 个字段", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+            if (rc != JOptionPane.OK_OPTION) return;
+            final String newPwd = new String(pwdField.getPassword());
+            if (newPwd.isEmpty()) {
+                appendLogFn.accept("!! 密码不能为空", COLOR_STDERR);
+                return;
+            }
+
+            long totalRows = picked.values().stream().mapToInt(java.util.List::size).sum();
+            btnResetPwd.setEnabled(false);
+            tabs.setSelectedIndex(2);
+            appendLogFn.accept(">> 重置密码 (" + picked.size() + " 个字段, " + totalRows + " 条记录: " + String.join(", ", picked.keySet()) + ")...", COLOR_START);
+            new Thread(() -> {
+                try {
+                    StringBuilder cp = new StringBuilder();
+                    cp.append(classPath);
+                    cp.append(File.pathSeparator).append(sksRoot.getAbsolutePath()).append(File.pathSeparator).append("bin");
+
+                    ArrayList<String> cmdList = new ArrayList<>();
+                    cmdList.add(javaCmd);
+                    cmdList.add("-Dfile.encoding=UTF-8");
+                    cmdList.add("-cp");
+                    cmdList.add(cp.toString());
+                    cmdList.add("ValidateCryptoKeyTool");
+                    cmdList.add("--sks-root=" + sksRoot.getAbsolutePath());
+                    cmdList.add("--action=encrypt");
+                    cmdList.add("--value=" + newPwd);
+                    cmdList.add("--fields=" + String.join(",", picked.keySet()));
+
+                    ProcessBuilder pb = new ProcessBuilder(cmdList);
+                    pb.directory(sksRoot);
+                    pb.redirectErrorStream(true);
+                    Process proc = pb.start();
+
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getInputStream(), "UTF-8"), 8192)) {
+                        String l; while ((l = r.readLine()) != null) {
+                            final String ll = l;
+                            SwingUtilities.invokeLater(() -> {
+                                if (ll.startsWith("ENC|")) {
+                                    String[] s = ll.split("\\|", 4);
+                                    if (s.length >= 4) {
+                                        String hex = s[3];
+                                        // where 条件: 勾选行的主键值 in (...), 避免整表误更新
+                                        java.util.List<String> pks = picked.get(s[1] + "." + s[2]);
+                                        String where = "";
+                                        if (pks != null && !pks.isEmpty()) {
+                                            String pkCol = cryptoTableIdMap.getOrDefault(s[1].toUpperCase(), s[1].toUpperCase() + "ID");
+                                            StringBuilder inList = new StringBuilder();
+                                            for (String pv : pks) {
+                                                if (inList.length() > 0) inList.append(",");
+                                                inList.append(pv.matches("\\d+") ? pv : "'" + pv + "'");
+                                            }
+                                            where = " where " + pkCol + " in (" + inList + ")";
+                                        }
+                                        String sql = "update " + s[1] + " set " + s[2]
+                                            + " = CAST(x'" + hex + "' AS BLOB(" + (hex.length() / 2) + "))" + where + ";";
+                                        appendLogFn.accept("  " + sql, COLOR_SUCCESS);
+                                    }
+                                } else if (ll.startsWith("ERROR|")) {
+                                    appendLogFn.accept("  " + ll.substring(6), COLOR_STDERR);
+                                } else if (ll.startsWith("INFO|")) {
+                                    appendLogFn.accept("  " + ll.substring(5), COLOR_INFO);
+                                } else if (ll.startsWith("DONE|")) {
+                                    appendLogFn.accept("-- 共生成 " + ll.substring(5) + " 条 update 语句（未执行，请人工核对后执行）", COLOR_INFO);
+                                } else {
+                                    appendLogFn.accept("  " + ll, COLOR_STDOUT);
+                                }
+                            });
+                        }
+                    }
+                    int ec = proc.waitFor();
+                    final int exitCode = ec;
+                    SwingUtilities.invokeLater(() -> {
+                        btnResetPwd.setEnabled(true);
+                        if (exitCode != 0) {
+                            appendLogFn.accept("-- 加密异常，退出码: " + exitCode, COLOR_STDERR);
+                        }
+                    });
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        btnResetPwd.setEnabled(true);
+                        appendLogFn.accept("!! 重置密码出错: " + ex.getMessage(), COLOR_STDERR);
+                    });
+                }
+            }, "reset-password").start();
+        });
+
+        // 重置APIKEY: 勾选的 APIKEYTOKEN.APIKEY 失败行, 每行随机 UUID(无-)加密后 base64 生成 update（仅生成, 不执行）
+        btnResetApikey.addActionListener(e -> {
+            java.util.List<String> pkVals = new ArrayList<>();
+            for (int i = 0; i < failModel.getRowCount(); i++) {
+                if (Boolean.TRUE.equals(failModel.getValueAt(i, 0))
+                        && "APIKEYTOKEN".equalsIgnoreCase(String.valueOf(failModel.getValueAt(i, 1)))
+                        && "APIKEY".equalsIgnoreCase(String.valueOf(failModel.getValueAt(i, 2)))) {
+                    pkVals.add(String.valueOf(failModel.getValueAt(i, 3)));
+                }
+            }
+            if (pkVals.isEmpty()) {
+                appendLogFn.accept("!! 请先在\"失败\"列表勾选 APIKEYTOKEN.APIKEY 的失败行", COLOR_STDERR);
+                tabs.setSelectedIndex(1);
+                return;
+            }
+            btnResetApikey.setEnabled(false);
+            tabs.setSelectedIndex(2);
+            appendLogFn.accept(">> 重置APIKEY (" + pkVals.size() + " 条, 每行随机 UUID, 无-符号)...", COLOR_START);
+            new Thread(() -> {
+                try {
+                    StringBuilder cp = new StringBuilder();
+                    cp.append(classPath);
+                    cp.append(File.pathSeparator).append(sksRoot.getAbsolutePath()).append(File.pathSeparator).append("bin");
+
+                    ArrayList<String> cmdList = new ArrayList<>();
+                    cmdList.add(javaCmd);
+                    cmdList.add("-Dfile.encoding=UTF-8");
+                    cmdList.add("-cp");
+                    cmdList.add(cp.toString());
+                    cmdList.add("ValidateCryptoKeyTool");
+                    cmdList.add("--sks-root=" + sksRoot.getAbsolutePath());
+                    cmdList.add("--action=apikey");
+                    cmdList.add("--pkvals=" + String.join(",", pkVals));
+
+                    ProcessBuilder pb = new ProcessBuilder(cmdList);
+                    pb.directory(sksRoot);
+                    pb.redirectErrorStream(true);
+                    Process proc = pb.start();
+
+                    try (BufferedReader r = new BufferedReader(new InputStreamReader(proc.getInputStream(), "UTF-8"), 8192)) {
+                        String l; while ((l = r.readLine()) != null) {
+                            final String ll = l;
+                            SwingUtilities.invokeLater(() -> {
+                                if (ll.startsWith("ENC|")) {
+                                    String[] s = ll.split("\\|", 5);
+                                    if (s.length >= 5) {
+                                        // ENC|APIKEYTOKEN|APIKEY|pk|b64
+                                        String pkCol = cryptoTableIdMap.getOrDefault(s[1].toUpperCase(), s[1].toUpperCase() + "ID");
+                                        String pkCond = s[3].matches("\\d+") ? s[3] : "'" + s[3] + "'";
+                                        String sql = "update " + s[1] + " set " + s[2]
+                                            + " = '" + s[4] + "'"
+                                            + " where " + pkCol + " = " + pkCond + ";";
+                                        appendLogFn.accept("  " + sql, COLOR_SUCCESS);
+                                    }
+                                } else if (ll.startsWith("INFO|")) {
+                                    // 明文 UUID 行用 SQL 注释格式, 便于整段复制执行
+                                    appendLogFn.accept("-- " + ll.substring(5), COLOR_INFO);
+                                } else if (ll.startsWith("ERROR|")) {
+                                    appendLogFn.accept("  " + ll.substring(6), COLOR_STDERR);
+                                } else if (ll.startsWith("DONE|")) {
+                                    appendLogFn.accept("-- 共生成 " + ll.substring(5) + " 条 update 语句（未执行，请人工核对后执行；明文 UUID 见上方注释行）", COLOR_INFO);
+                                } else {
+                                    appendLogFn.accept("  " + ll, COLOR_STDOUT);
+                                }
+                            });
+                        }
+                    }
+                    int ec = proc.waitFor();
+                    final int exitCode = ec;
+                    SwingUtilities.invokeLater(() -> {
+                        btnResetApikey.setEnabled(true);
+                        if (exitCode != 0) {
+                            appendLogFn.accept("-- 加密异常，退出码: " + exitCode, COLOR_STDERR);
+                        }
+                    });
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        btnResetApikey.setEnabled(true);
+                        appendLogFn.accept("!! 重置APIKEY出错: " + ex.getMessage(), COLOR_STDERR);
+                    });
+                }
+            }, "reset-apikey").start();
+        });
+
+        btnClose.addActionListener(e -> dialog.dispose());
+
+        // ---- 布局 ----
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        btnPanel.add(btnValidate);
+        btnPanel.add(btnSelectAllFail);
+        btnPanel.add(btnFilterTable);
+        btnPanel.add(btnResetPwd);
+        btnPanel.add(btnResetApikey);
+        btnPanel.add(Box.createHorizontalGlue());
+        btnPanel.add(btnClose);
+
+        JPanel panel = new JPanel(new BorderLayout(0, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        panel.add(btnPanel, BorderLayout.NORTH);
+        panel.add(tabs, BorderLayout.CENTER);
+
+        dialog.getContentPane().add(panel);
+        dialog.setSize(1050, 620);
+        dialog.setMinimumSize(new Dimension(820, 450));
+        dialog.setLocationRelativeTo(frame);
+        dialog.setVisible(true);
+    }
+
+    // ============================================================
+    // 表格复制支持: Ctrl+C 复制选中单元格(多格 Tab/换行分隔), 右键弹出"复制单元格值"
+    // ============================================================
+    private void addTableCopySupport(JTable table) {
+        table.setCellSelectionEnabled(true);
+        // Ctrl+C
+        table.getInputMap(javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+            .put(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_C,
+                java.awt.event.InputEvent.CTRL_DOWN_MASK), "sks-copy-cells");
+        table.getActionMap().put("sks-copy-cells", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                copySelectedCells(table);
+            }
+        });
+        // 右键菜单
+        javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
+        javax.swing.JMenuItem miCopy = new javax.swing.JMenuItem("复制单元格值");
+        miCopy.addActionListener(e -> {
+            int r = table.getSelectedRow(), c = table.getSelectedColumn();
+            if (r >= 0 && c >= 0) {
+                Object v = table.getValueAt(r, c);
+                setClipboardText(v == null ? "" : String.valueOf(v));
+            }
+        });
+        popup.add(miCopy);
+        table.addMouseListener(new java.awt.event.MouseAdapter() {
+            private void show(java.awt.event.MouseEvent ev) {
+                if (!ev.isPopupTrigger()) return;
+                int r = table.rowAtPoint(ev.getPoint());
+                int c = table.columnAtPoint(ev.getPoint());
+                if (r >= 0 && c >= 0) {
+                    table.changeSelection(r, c, false, false);
+                    popup.show(table, ev.getX(), ev.getY());
+                }
+            }
+            @Override public void mousePressed(java.awt.event.MouseEvent ev) { show(ev); }
+            @Override public void mouseReleased(java.awt.event.MouseEvent ev) { show(ev); }
+        });
+    }
+
+    // 复制选中单元格区域: 列间 Tab, 行间换行
+    private void copySelectedCells(JTable table) {
+        int[] rows = table.getSelectedRows();
+        int[] cols = table.getSelectedColumns();
+        if (rows.length == 0 || cols.length == 0) return;
+        StringBuilder sb = new StringBuilder();
+        for (int r : rows) {
+            for (int i = 0; i < cols.length; i++) {
+                if (i > 0) sb.append("\t");
+                Object v = table.getValueAt(r, cols[i]);
+                sb.append(v == null ? "" : String.valueOf(v));
+            }
+            sb.append("\r\n");
+        }
+        setClipboardText(sb.toString().trim());
+    }
+
+    private void setClipboardText(String s) {
+        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+            .setContents(new java.awt.datatransfer.StringSelection(s), null);
+    }
+
+    // ============================================================
     // 查看用户 / 重置密码
     // ============================================================
     private void runUserList() {
@@ -1837,6 +2372,7 @@ public class ConfigDBUI {
         btnQueryVars = createButton("查询变量", new Color(90, 170, 140), e -> runQueryVars());
         btnLogLevel  = createButton("备份表管理", new Color(160, 120, 180), e -> runBackupTableList());
         btnShowUsers = createButton("查看用户", new Color(60, 150, 190), e -> runUserList());
+        btnValidateCrypto = createButton("验证全库密码", new Color(120, 90, 170), e -> runValidateCryptoKey());
 
         JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         row2.setBackground(Color.WHITE);
@@ -1848,6 +2384,7 @@ public class ConfigDBUI {
         row2.add(btnQueryVars);
         row2.add(btnLogLevel);
         row2.add(btnShowUsers);
+        row2.add(btnValidateCrypto);
 
         toolbar.add(row1);
         toolbar.add(row2);
